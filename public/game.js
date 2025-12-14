@@ -7,7 +7,7 @@ tg.expand();
 const state = {
     playerId: tg.initDataUnsafe?.user?.id || Date.now().toString(),
     playerName: tg.initDataUnsafe?.user?.first_name || 'Игрок',
-    balance: 100, // Дефолтный баланс
+    balance: 100, // Начальный баланс для тестирования: 100 USDT
     selectedStake: null,
     selectedSkin: '#FF6B6B',
     ws: null,
@@ -108,6 +108,17 @@ function updateUI() {
     document.getElementById('playerName').textContent = state.playerName;
     document.getElementById('balance').textContent = `USDT $${state.balance}`;
 }
+
+// Сброс баланса до 100 USDT для тестирования
+function resetBalance() {
+    state.balance = 100;
+    updateUI();
+}
+
+// Автоматический сброс баланса при загрузке страницы (для тестирования)
+window.addEventListener('load', () => {
+    resetBalance();
+});
 
 // Начало игры
 function startGame() {
