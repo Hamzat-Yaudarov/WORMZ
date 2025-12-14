@@ -117,6 +117,10 @@ function startGame() {
         return;
     }
     
+    // Списываем ставку сразу
+    state.balance -= state.selectedStake;
+    updateUI();
+    
     document.getElementById('menu').classList.add('hidden');
     document.getElementById('stakeModal').classList.add('hidden');
     document.getElementById('gameScreen').classList.add('active');
@@ -237,17 +241,19 @@ function endGame() {
         // Получаем финальный баланс перед выходом
         const myPlayer = state.game?.players?.get(state.playerId);
         if (myPlayer) {
-            // Расчет выигрыша (можно улучшить логику)
+            // Игрок выжил - получает заработанное USDT
             const profit = myPlayer.usdt - state.selectedStake;
             if (profit > 0) {
                 state.balance += profit;
                 tg.showAlert(`Вы выиграли $${profit.toFixed(2)}!`);
             } else {
-                state.balance -= state.selectedStake;
+                // Не заработал, но ставка возвращается (не умер)
+                state.balance += myPlayer.usdt;
             }
         } else {
-            // Игрок умер - теряет ставку
+            // Игрок умер - теряет ставку полностью
             state.balance -= state.selectedStake;
+            // Ставка уже была списана при входе, поэтому просто не возвращаем
         }
         
         state.ws.send(JSON.stringify({ type: 'leave' }));
@@ -373,10 +379,78 @@ class Game {
     }
     
     updateState(data) {
-        this.players.clear();
+        // Восстанавливаем полные данные из упрощенных
+        const newPlayers = new Map();
         data.players.forEach(p => {
-            this.players.set(p.id, p);
+            const existing = this.players.get(p.id);
+            if (existing && existing.snake && existing.snake.body && existing.snake.body.length > 0) {
+                // Сохраняем тело змейки, обновляем только позицию головы
+                const body = existing.snake.body;
+                // Плавно обновляем голову
+                body[0].x = p.x;
+                body[0].y = p.y;
+                // Обновляем остальные данные
+                newPlayers.set(p.id, {
+                    ...existing,
+                    id: p.id,
+                    name: p.name,
+                    usdt: p.usdt,
+                    snake: {
+                        ...existing.snake,
+                        x: p.x,
+                        y: p.y,
+                        angle: p.angle,
+                        size: p.size,
+                        body: body
+                    },
+                    color: p.color
+                });
+            } else {
+                // Новый игрок - создаем тело (25 сегментов изначально)
+                const body = [];
+                const bodyLength = p.bodyLength || 25;
+                
+                // Если есть точки тела с сервера, используем их
+                if (p.bodyPoints && p.bodyPoints.length > 0) {
+                    // Используем полученные точки и интерполируем остальные
+                    for (let i = 0; i < bodyLength; i++) {
+                        if (i < p.bodyPoints.length) {
+                            body.push({ x: p.bodyPoints[i].x, y: p.bodyPoints[i].y });
+                        } else {
+                            // Интерполируем остальные точки
+                            const prevPoint = body[body.length - 1];
+                            body.push({
+                                x: prevPoint.x - Math.cos(p.angle) * 5,
+                                y: prevPoint.y - Math.sin(p.angle) * 5
+                            });
+                        }
+                    }
+                } else {
+                    // Создаем тело с нуля
+                    for (let i = 0; i < bodyLength; i++) {
+                        body.push({
+                            x: p.x - Math.cos(p.angle) * i * 5,
+                            y: p.y - Math.sin(p.angle) * i * 5
+                        });
+                    }
+                }
+                
+                newPlayers.set(p.id, {
+                    id: p.id,
+                    name: p.name,
+                    usdt: p.usdt,
+                    snake: {
+                        x: p.x,
+                        y: p.y,
+                        angle: p.angle,
+                        size: p.size,
+                        body: body
+                    },
+                    color: p.color
+                });
+            }
         });
+        this.players = newPlayers;
         this.food = data.food;
         this.deadSnakes = data.deadSnakes;
         
@@ -386,19 +460,22 @@ class Game {
             // Плавное следование камеры
             const dx = myPlayer.snake.x - this.camera.x;
             const dy = myPlayer.snake.y - this.camera.y;
-            this.camera.x += dx * 0.1;
-            this.camera.y += dy * 0.1;
+            this.camera.x += dx * 0.2; // Быстрее для отзывчивости
+            this.camera.y += dy * 0.2;
             
             // Масштабирование в зависимости от размера змейки
             const baseScale = 0.5;
             const sizeFactor = Math.max(0.3, 1 - (myPlayer.snake.size - 20) / 200);
             this.scale = baseScale * sizeFactor;
             
-            // Обновление UI
-            document.getElementById('gameUsdt').textContent = 
-                `USDT: $${myPlayer.usdt.toFixed(2)}`;
-            document.getElementById('gamePlayers').textContent = 
-                `Игроков: ${this.players.size}`;
+            // Обновление UI (реже для оптимизации)
+            if (!this.lastUIUpdate || Date.now() - this.lastUIUpdate > 200) {
+                document.getElementById('gameUsdt').textContent = 
+                    `USDT: $${myPlayer.usdt.toFixed(2)}`;
+                document.getElementById('gamePlayers').textContent = 
+                    `Игроков: ${this.players.size}`;
+                this.lastUIUpdate = Date.now();
+            }
         } else {
             // Игрок умер
             if (this.isRunning) {
@@ -413,7 +490,18 @@ class Game {
     
     loop() {
         if (this.isRunning) {
-            this.draw();
+            const now = Date.now();
+            if (!this.lastFrameTime) {
+                this.lastFrameTime = now;
+            }
+            
+            const delta = now - this.lastFrameTime;
+            // Ограничение FPS до 30 для мобильных устройств
+            if (delta >= 33) { // ~30 FPS
+                this.draw();
+                this.lastFrameTime = now;
+            }
+            
             this.animationId = requestAnimationFrame(() => this.loop());
         }
     }
@@ -427,14 +515,12 @@ class Game {
         ctx.fillStyle = '#0f0f1e';
         ctx.fillRect(0, 0, width, height);
         
-        // Сетка (оптимизированная)
+        // Сетка (упрощенная для производительности)
         ctx.strokeStyle = '#1a1a2e';
         ctx.lineWidth = 1;
-        const gridSize = 50;
+        const gridSize = 100; // Больше шаг сетки
         const scale = this.scale;
         const scaledGridSize = gridSize / scale;
-        const offsetX = ((this.camera.x * scale) % scaledGridSize) - (width / 2 % scaledGridSize);
-        const offsetY = ((this.camera.y * scale) % scaledGridSize) - (height / 2 % scaledGridSize);
         
         ctx.save();
         ctx.translate(width / 2, height / 2);
@@ -446,6 +532,7 @@ class Game {
         const startY = Math.floor((this.camera.y - height / 2 / scale) / scaledGridSize) * scaledGridSize;
         const endY = Math.ceil((this.camera.y + height / 2 / scale) / scaledGridSize) * scaledGridSize;
         
+        // Рисуем только видимые линии
         for (let x = startX; x <= endX; x += scaledGridSize) {
             ctx.beginPath();
             ctx.moveTo(x, startY);
@@ -468,32 +555,27 @@ class Game {
         ctx.scale(this.scale, this.scale);
         ctx.translate(-this.camera.x, -this.camera.y);
         
-        // Рисование еды (оптимизировано - только видимая еда)
-        const myPlayer = this.players.get(this.myPlayerId);
-        if (myPlayer) {
-            const viewRadius = Math.max(this.canvas.width, this.canvas.height) / this.scale;
-            this.food.forEach(f => {
-                const dx = f.x - this.camera.x;
-                const dy = f.y - this.camera.y;
-                const dist = Math.sqrt(dx * dx + dy * dy);
-                
-                // Рисуем только видимую еду
-                if (dist < viewRadius + 50) {
-                    const gradient = ctx.createRadialGradient(f.x, f.y, 0, f.x, f.y, f.size);
-                    gradient.addColorStop(0, '#4ECDC4');
-                    gradient.addColorStop(1, '#2E8B8B');
-                    ctx.fillStyle = gradient;
-                    ctx.beginPath();
-                    ctx.arc(f.x, f.y, f.size, 0, Math.PI * 2);
-                    ctx.fill();
-                    
-                    // Блик на еде
-                    ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
-                    ctx.beginPath();
-                    ctx.arc(f.x - f.size * 0.3, f.y - f.size * 0.3, f.size * 0.3, 0, Math.PI * 2);
-                    ctx.fill();
-                }
-            });
+        // Рисование еды (максимально оптимизировано)
+        const viewRadius = Math.max(this.canvas.width, this.canvas.height) / this.scale + 100;
+        const viewRadiusSq = viewRadius * viewRadius; // Используем квадрат для избежания sqrt
+        
+        ctx.fillStyle = '#4ECDC4';
+        let drawnFood = 0;
+        const maxFoodToDraw = 200; // Ограничение количества еды для отрисовки
+        
+        for (let i = 0; i < this.food.length && drawnFood < maxFoodToDraw; i++) {
+            const f = this.food[i];
+            const dx = f.x - this.camera.x;
+            const dy = f.y - this.camera.y;
+            const distSq = dx * dx + dy * dy;
+            
+            // Рисуем только видимую еду (без sqrt для производительности)
+            if (distSq < viewRadiusSq) {
+                ctx.beginPath();
+                ctx.arc(f.x, f.y, f.size, 0, Math.PI * 2);
+                ctx.fill();
+                drawnFood++;
+            }
         }
         
         // Рисование мертвых змеек (оптимизировано)
@@ -534,61 +616,54 @@ class Game {
             }
         });
         
-        // Рисование змеек (как червяки)
+        // Рисование змеек (как червяки, оптимизировано)
         this.players.forEach((player, playerId) => {
             const snake = player.snake;
             const isMe = playerId === this.myPlayerId;
             
-            // Рисуем тело змейки как связанные сегменты (червяк)
-            if (snake.body.length > 1) {
-                ctx.save();
-                ctx.strokeStyle = player.color;
-                ctx.fillStyle = player.color;
-                ctx.lineWidth = snake.size * 2;
-                ctx.lineCap = 'round';
-                ctx.lineJoin = 'round';
-                
-                // Рисуем тело как линию
-                ctx.beginPath();
-                ctx.moveTo(snake.body[0].x, snake.body[0].y);
-                for (let i = 1; i < snake.body.length; i++) {
-                    ctx.lineTo(snake.body[i].x, snake.body[i].y);
-                }
-                ctx.stroke();
-                
-                // Рисуем сегменты тела с уменьшающимся размером
-                for (let i = 0; i < snake.body.length; i++) {
-                    const segment = snake.body[i];
-                    const progress = i / snake.body.length;
-                    const size = snake.size * (1 - progress * 0.5);
-                    
-                    // Градиент для каждого сегмента
-                    const gradient = ctx.createRadialGradient(
-                        segment.x, segment.y, 0,
-                        segment.x, segment.y, size
-                    );
-                    const r = parseInt(player.color.slice(1, 3), 16);
-                    const g = parseInt(player.color.slice(3, 5), 16);
-                    const b = parseInt(player.color.slice(5, 7), 16);
-                    const alpha = 0.7 + progress * 0.3;
-                    gradient.addColorStop(0, `rgba(${r}, ${g}, ${b}, ${alpha})`);
-                    gradient.addColorStop(0.7, `rgba(${r}, ${g}, ${b}, ${alpha * 0.8})`);
-                    gradient.addColorStop(1, `rgba(${r}, ${g}, ${b}, ${alpha * 0.5})`);
-                    
-                    ctx.fillStyle = gradient;
-                    ctx.beginPath();
-                    ctx.arc(segment.x, segment.y, size, 0, Math.PI * 2);
-                    ctx.fill();
-                    
-                    // Обводка для своей змейки
-                    if (isMe && i === 0) {
-                        ctx.strokeStyle = '#FFFFFF';
-                        ctx.lineWidth = 2;
-                        ctx.stroke();
-                    }
-                }
-                ctx.restore();
+            if (!snake || !snake.body || snake.body.length === 0) return;
+            
+            // Оптимизированное рисование тела
+            ctx.save();
+            ctx.strokeStyle = player.color;
+            ctx.fillStyle = player.color;
+            ctx.lineWidth = snake.size * 2;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            
+            // Рисуем тело как линию (быстрее чем отдельные круги)
+            ctx.beginPath();
+            ctx.moveTo(snake.body[0].x, snake.body[0].y);
+            // Рисуем каждый 2-й сегмент для оптимизации
+            const step = Math.max(1, Math.floor(snake.body.length / 30));
+            for (let i = step; i < snake.body.length; i += step) {
+                ctx.lineTo(snake.body[i].x, snake.body[i].y);
             }
+            if (snake.body.length > 0) {
+                ctx.lineTo(snake.body[snake.body.length - 1].x, snake.body[snake.body.length - 1].y);
+            }
+            ctx.stroke();
+            
+            // Рисуем только ключевые сегменты (голова, середина, хвост)
+            const keySegments = [
+                0, // голова
+                Math.floor(snake.body.length / 2), // середина
+                snake.body.length - 1 // хвост
+            ];
+            
+            keySegments.forEach(i => {
+                if (i >= snake.body.length) return;
+                const segment = snake.body[i];
+                const progress = i / snake.body.length;
+                const size = snake.size * (1 - progress * 0.5);
+                
+                ctx.fillStyle = player.color;
+                ctx.beginPath();
+                ctx.arc(segment.x, segment.y, size, 0, Math.PI * 2);
+                ctx.fill();
+            });
+            
+            ctx.restore();
             
             // Голова (больший сегмент)
             const headGradient = ctx.createRadialGradient(

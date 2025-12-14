@@ -92,8 +92,8 @@ class GameServer {
       lastUpdate: Date.now()
     };
 
-    // Инициализация тела змейки
-    for (let i = 0; i < 10; i++) {
+    // Инициализация тела змейки (длиннее изначально)
+    for (let i = 0; i < 25; i++) {
       player.snake.body.push({
         x: player.snake.x - Math.cos(player.snake.angle) * i * 5,
         y: player.snake.y - Math.sin(player.snake.angle) * i * 5
@@ -299,21 +299,27 @@ class GameServer {
     const player = this.players.get(playerId);
     if (!player) return;
 
-    // Создаем мертвую змейку с USDT
-    this.deadSnakes.push({
-      x: player.snake.x,
-      y: player.snake.y,
-      body: [...player.snake.body],
-      usdt: player.usdt,
-      color: player.color,
-      timestamp: Date.now()
-    });
+    // Игрок теряет свою ставку при смерти
+    // USDT, которые он накопил в игре, падают на карту
+    const earnedUsdt = player.usdt - player.stake;
+    
+    // Создаем мертвую змейку с заработанным USDT (без ставки)
+    if (earnedUsdt > 0) {
+      this.deadSnakes.push({
+        x: player.snake.x,
+        y: player.snake.y,
+        body: [...player.snake.body],
+        usdt: earnedUsdt, // Только заработанное, ставка теряется
+        color: player.color,
+        timestamp: Date.now()
+      });
+    }
 
     // Если есть убийца, он получает небольшой бонус
     if (killerId) {
       const killer = this.players.get(killerId);
-      if (killer) {
-        killer.usdt += player.usdt * 0.1; // 10% бонус за убийство
+      if (killer && earnedUsdt > 0) {
+        killer.usdt += earnedUsdt * 0.1; // 10% бонус за убийство
       }
     }
 
@@ -451,8 +457,13 @@ wss.on('connection', (ws, req) => {
   });
 });
 
-// Игровой цикл (30 FPS для оптимизации)
+// Игровой цикл (20 FPS для критической оптимизации)
+let lastUpdate = Date.now();
 setInterval(() => {
+  const now = Date.now();
+  const delta = now - lastUpdate;
+  lastUpdate = now;
+  
   for (const servers of gameServers.values()) {
     for (const server of servers) {
       if (server.players.size > 0 && server.gameStarted) {
@@ -460,14 +471,47 @@ setInterval(() => {
         server.maintainFood();
         
         // Отправка состояния всем игрокам на сервере (только если игра началась)
+        // Оптимизация: отправляем только изменения, не полное состояние каждый раз
         const state = server.getState();
+        
+        // Упрощаем данные для отправки
+        const simplifiedState = {
+          players: state.players.map(p => ({
+            id: p.id,
+            name: p.name,
+            usdt: Math.round(p.usdt * 100) / 100, // Округление для уменьшения размера
+            x: Math.round(p.snake.x),
+            y: Math.round(p.snake.y),
+            angle: Math.round(p.snake.angle * 1000) / 1000,
+            size: Math.round(p.snake.size * 10) / 10,
+            bodyLength: p.snake.body.length,
+            // Отправляем первые несколько точек тела для интерполяции
+            bodyPoints: p.snake.body.slice(0, 5).map(b => ({
+              x: Math.round(b.x),
+              y: Math.round(b.y)
+            })),
+            color: p.color
+          })),
+          food: state.food.map(f => ({
+            x: Math.round(f.x),
+            y: Math.round(f.y),
+            size: Math.round(f.size * 10) / 10
+          })),
+          deadSnakes: state.deadSnakes.map(d => ({
+            x: Math.round(d.x),
+            y: Math.round(d.y),
+            usdt: Math.round(d.usdt * 100) / 100,
+            color: d.color
+          }))
+        };
+        
         for (const [ws, conn] of connections) {
           if (conn.server === server) {
             try {
               if (ws.readyState === 1) { // WebSocket.OPEN
                 ws.send(JSON.stringify({
                   type: 'state',
-                  ...state
+                  ...simplifiedState
                 }));
               }
             } catch (error) {
@@ -495,7 +539,7 @@ setInterval(() => {
       }
     }
   }
-}, 1000 / 30); // 30 FPS вместо 60 для оптимизации
+}, 1000 / 20); // 20 FPS для критической оптимизации
 
 // API endpoints
 app.get('/api/player/:userId', (req, res) => {
