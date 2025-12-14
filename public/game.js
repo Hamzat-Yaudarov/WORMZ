@@ -1,475 +1,619 @@
+// Telegram WebApp API
 const tg = window.Telegram.WebApp;
 tg.ready();
 tg.expand();
 
-const canvas = document.getElementById('gameCanvas');
-const ctx = canvas.getContext('2d');
+// Состояние приложения
+const state = {
+    playerId: tg.initDataUnsafe?.user?.id || Date.now().toString(),
+    playerName: tg.initDataUnsafe?.user?.first_name || 'Игрок',
+    balance: 100, // Дефолтный баланс
+    selectedStake: null,
+    selectedSkin: '#FF6B6B',
+    ws: null,
+    game: null,
+    exitTimer: null,
+    canExit: false
+};
 
-function resizeCanvas() {
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
-}
-resizeCanvas();
-window.addEventListener('resize', resizeCanvas);
-
-let ws = null;
-let player = null;
-let players = new Map();
-let currentShopTab = 'weapons';
-let gameLoop = null;
-
-const weapons = [
-    { id: 'sword', name: 'Меч', cost: 50, attackBonus: 10, desc: 'Базовое оружие' },
-    { id: 'axe', name: 'Топор', cost: 100, attackBonus: 20, desc: 'Сильное оружие' },
-    { id: 'mace', name: 'Булава', cost: 200, attackBonus: 35, desc: 'Очень сильное оружие' },
-    { id: 'sword2', name: 'Магический меч', cost: 500, attackBonus: 60, desc: 'Легендарное оружие' }
-];
-
-const upgrades = [
-    { id: 'attack1', name: 'Усиление атаки I', cost: 100, type: 'attack', value: 15, desc: '+15 к атаке' },
-    { id: 'attack2', name: 'Усиление атаки II', cost: 250, type: 'attack', value: 30, desc: '+30 к атаке' },
-    { id: 'defense1', name: 'Усиление защиты I', cost: 100, type: 'defense', value: 10, desc: '+10 к защите' },
-    { id: 'defense2', name: 'Усиление защиты II', cost: 250, type: 'defense', value: 20, desc: '+20 к защите' },
-    { id: 'health1', name: 'Усиление здоровья I', cost: 150, type: 'health', value: 50, desc: '+50 к здоровью' },
-    { id: 'health2', name: 'Усиление здоровья II', cost: 300, type: 'health', value: 100, desc: '+100 к здоровью' }
-];
-
-const skills = [
-    { id: 'crit', name: 'Критический удар', cost: 200, desc: 'Шанс нанести двойной урон' },
-    { id: 'heal', name: 'Лечение', cost: 300, desc: 'Восстанавливает здоровье' },
-    { id: 'shield', name: 'Щит', cost: 400, desc: 'Увеличивает защиту на время' }
-];
-
-function connect() {
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/ws`;
+// Инициализация
+document.addEventListener('DOMContentLoaded', () => {
+    initMenu();
+    initStakeModal();
+    initSkinsModal();
+    initGame();
     
-    ws = new WebSocket(wsUrl);
-
-    ws.onopen = () => {
-        const initData = tg.initDataUnsafe;
-        const userId = initData?.user?.id || `user_${Date.now()}`;
-        const username = initData?.user?.username || initData?.user?.first_name || 'Player';
-        
-        ws.send(JSON.stringify({
-            type: 'join',
-            playerId: userId.toString(),
-            username: username,
-            telegramId: userId.toString()
-        }));
-    };
-
-    ws.onmessage = (event) => {
-        const data = JSON.parse(event.data);
-        handleMessage(data);
-    };
-
-    ws.onerror = () => {
-        setTimeout(connect, 3000);
-    };
-
-    ws.onclose = () => {
-        setTimeout(connect, 3000);
-    };
-}
-
-function handleMessage(data) {
-    switch (data.type) {
-        case 'joined':
-            player = data.player;
-            updateUI();
-            updateShop();
-            break;
-
-        case 'playerJoined':
-            if (data.player.id !== player.id) {
-                players.set(data.player.id, data.player);
-            }
-            updatePlayersList();
-            break;
-
-        case 'playerMoved':
-            const movedPlayer = players.get(data.playerId);
-            if (movedPlayer) {
-                movedPlayer.position = data.position;
-            }
-            break;
-
-        case 'playerLeft':
-            players.delete(data.playerId);
-            updatePlayersList();
-            break;
-
-        case 'battleUpdate':
-            showBattleNotification('⚔️ БИТВА!');
-            if (data.attacker.id === player.id) {
-                player.health = data.attacker.health;
-                player.maxHealth = data.attacker.maxHealth;
-            } else if (data.defender.id === player.id) {
-                player.health = data.defender.health;
-                player.maxHealth = data.defender.maxHealth;
-            }
-            updateUI();
-            break;
-
-        case 'battleEnded':
-            if (data.winner === player.id) {
-                showBattleNotification('🎉 ПОБЕДА!');
-                player.gold += data.goldReward;
-                player.exp += data.expReward;
-                if (data.leveledUp) {
-                    showBattleNotification('⬆️ УРОВЕНЬ ПОВЫШЕН!');
-                }
-            } else if (data.loser === player.id) {
-                showBattleNotification('💀 ПОРАЖЕНИЕ');
-            }
-            player.health = player.maxHealth;
-            updateUI();
-            break;
-
-        case 'weaponBought':
-            player.weapon = data.weapon;
-            player.gold = data.gold;
-            player.attack = data.attack;
-            updateUI();
-            updateShop();
-            break;
-
-        case 'upgradeBought':
-            player.upgrades = data.upgrades;
-            player.gold = data.gold;
-            player.attack = data.attack;
-            player.defense = data.defense;
-            player.maxHealth = data.maxHealth;
-            player.health = data.health;
-            updateUI();
-            updateShop();
-            break;
-
-        case 'skillLearned':
-            player.skills = data.skills;
-            player.gold = data.gold;
-            updateUI();
-            updateShop();
-            break;
-
-        case 'allianceJoined':
-            player.allianceId = data.alliance.id;
-            updateAlliancePanel(data.alliance);
-            break;
-
-        case 'allianceUpdated':
-            if (player && player.allianceId === data.alliance.id) {
-                updateAlliancePanel(data.alliance);
-            }
-            break;
-
-        case 'pong':
-            break;
+    // Обновление имени игрока из Telegram
+    if (tg.initDataUnsafe?.user) {
+        const user = tg.initDataUnsafe.user;
+        state.playerName = user.first_name || user.username || 'Игрок';
+        if (user.last_name) {
+            state.playerName += ' ' + user.last_name;
+        }
     }
+    
+    updateUI();
+});
+
+// Инициализация меню
+function initMenu() {
+    document.getElementById('playButton').addEventListener('click', () => {
+        document.getElementById('stakeModal').classList.remove('hidden');
+    });
+    
+    document.getElementById('skinsButton').addEventListener('click', () => {
+        document.getElementById('skinsModal').classList.remove('hidden');
+    });
 }
 
+// Инициализация модального окна ставок
+function initStakeModal() {
+    const buttons = document.querySelectorAll('.stake-button');
+    buttons.forEach(btn => {
+        btn.addEventListener('click', () => {
+            const stake = parseInt(btn.dataset.stake);
+            if (state.balance >= stake) {
+                state.selectedStake = stake;
+                startGame();
+            } else {
+                alert('Недостаточно средств!');
+            }
+        });
+    });
+}
+
+// Инициализация модального окна скинов
+function initSkinsModal() {
+    const skins = [
+        '#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A', '#98D8C8',
+        '#F7DC6F', '#BB8FCE', '#85C1E2', '#F8B739', '#E74C3C',
+        '#9B59B6', '#3498DB', '#1ABC9C', '#E67E22', '#F39C12'
+    ];
+    
+    const grid = document.getElementById('skinsGrid');
+    skins.forEach(color => {
+        const item = document.createElement('div');
+        item.className = 'skin-item';
+        item.style.backgroundColor = color;
+        if (color === state.selectedSkin) {
+            item.classList.add('selected');
+        }
+        item.addEventListener('click', () => {
+            document.querySelectorAll('.skin-item').forEach(i => i.classList.remove('selected'));
+            item.classList.add('selected');
+            state.selectedSkin = color;
+        });
+        grid.appendChild(item);
+    });
+    
+    document.getElementById('closeSkinsButton').addEventListener('click', () => {
+        document.getElementById('skinsModal').classList.add('hidden');
+    });
+}
+
+// Инициализация игры
+function initGame() {
+    const canvas = document.getElementById('gameCanvas');
+    state.game = new Game(canvas);
+    
+    document.getElementById('exitButton').addEventListener('click', () => {
+        if (state.canExit) {
+            endGame();
+        }
+    });
+}
+
+// Обновление UI
 function updateUI() {
-    if (!player) return;
-
-    document.getElementById('playerName').textContent = player.username;
-    document.getElementById('playerLevel').textContent = player.level;
-    document.getElementById('playerHealth').textContent = `${player.health}/${player.maxHealth}`;
-    document.getElementById('playerGold').textContent = player.gold;
-    document.getElementById('playerAttack').textContent = player.attack;
-    document.getElementById('playerDefense').textContent = player.defense;
-    document.getElementById('playerExp').textContent = player.exp;
-
-    const healthPercent = (player.health / player.maxHealth) * 100;
-    document.getElementById('healthBar').style.width = `${healthPercent}%`;
-
-    const expNeeded = player.level * 100;
-    const expPercent = (player.exp / expNeeded) * 100;
-    document.getElementById('expBar').style.width = `${expPercent}%`;
+    document.getElementById('playerName').textContent = state.playerName;
+    document.getElementById('balance').textContent = `USDT $${state.balance}`;
 }
 
-function updateShop() {
-    const content = document.getElementById('shopContent');
-    content.innerHTML = '';
-
-    if (currentShopTab === 'weapons') {
-        weapons.forEach(weapon => {
-            const owned = player.weapon === weapon.id;
-            const canAfford = player.gold >= weapon.cost;
-            const item = document.createElement('div');
-            item.className = `shop-item ${owned || !canAfford ? 'disabled' : ''}`;
-            item.innerHTML = `
-                <div class="item-name">${weapon.name} ${owned ? '✓' : ''}</div>
-                <div class="item-desc">${weapon.desc}</div>
-                <div class="item-cost">💰 ${weapon.cost} (+${weapon.attackBonus} атака)</div>
-            `;
-            if (!owned && canAfford) {
-                item.onclick = () => buyWeapon(weapon);
-            }
-            content.appendChild(item);
-        });
-    } else if (currentShopTab === 'upgrades') {
-        upgrades.forEach(upgrade => {
-            const owned = player.upgrades.find(u => u.id === upgrade.id);
-            const canAfford = player.gold >= upgrade.cost;
-            const item = document.createElement('div');
-            item.className = `shop-item ${owned || !canAfford ? 'disabled' : ''}`;
-            item.innerHTML = `
-                <div class="item-name">${upgrade.name} ${owned ? '✓' : ''}</div>
-                <div class="item-desc">${upgrade.desc}</div>
-                <div class="item-cost">💰 ${upgrade.cost}</div>
-            `;
-            if (!owned && canAfford) {
-                item.onclick = () => buyUpgrade(upgrade);
-            }
-            content.appendChild(item);
-        });
-    } else if (currentShopTab === 'skills') {
-        skills.forEach(skill => {
-            const owned = player.skills.find(s => s.id === skill.id);
-            const canAfford = player.gold >= skill.cost;
-            const item = document.createElement('div');
-            item.className = `shop-item ${owned || !canAfford ? 'disabled' : ''}`;
-            item.innerHTML = `
-                <div class="item-name">${skill.name} ${owned ? '✓' : ''}</div>
-                <div class="item-desc">${skill.desc}</div>
-                <div class="item-cost">💰 ${skill.cost}</div>
-            `;
-            if (!owned && canAfford) {
-                item.onclick = () => learnSkill(skill);
-            }
-            content.appendChild(item);
-        });
-    }
-}
-
-function buyWeapon(weapon) {
-    if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({
-            type: 'buyWeapon',
-            weapon: weapon.id,
-            cost: weapon.cost,
-            attackBonus: weapon.attackBonus
-        }));
-    }
-}
-
-function buyUpgrade(upgrade) {
-    if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({
-            type: 'buyUpgrade',
-            upgrade: upgrade,
-            cost: upgrade.cost
-        }));
-    }
-}
-
-function learnSkill(skill) {
-    if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({
-            type: 'learnSkill',
-            skill: skill,
-            cost: skill.cost
-        }));
-    }
-}
-
-function updatePlayersList() {
-    const content = document.getElementById('playersListContent');
-    content.innerHTML = '';
-    
-    players.forEach(p => {
-        const item = document.createElement('div');
-        item.className = 'player-item';
-        item.innerHTML = `
-            <span>${p.username} (Lv.${p.level})</span>
-            <span>${p.inBattle ? '⚔️' : '🟢'}</span>
-        `;
-        content.appendChild(item);
-    });
-}
-
-function updateAlliancePanel(alliance) {
-    const content = document.getElementById('allianceMembers');
-    content.innerHTML = `<div style="margin-bottom: 10px; font-weight: bold;">${alliance.name}</div>`;
-    alliance.members.forEach(member => {
-        const item = document.createElement('div');
-        item.className = 'alliance-member';
-        item.textContent = `${member.username} (Lv.${member.level})`;
-        content.appendChild(item);
-    });
-}
-
-document.querySelectorAll('.tab').forEach(tab => {
-    tab.addEventListener('click', () => {
-        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-        tab.classList.add('active');
-        currentShopTab = tab.dataset.tab;
-        updateShop();
-    });
-});
-
-document.getElementById('joinAllianceBtn').addEventListener('click', () => {
-    const name = document.getElementById('allianceName').value.trim();
-    if (name && ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({
-            type: 'joinAlliance',
-            allianceId: name.toLowerCase().replace(/\s+/g, '_'),
-            allianceName: name
-        }));
-    }
-});
-
-let battleNotificationTimeout = null;
-function showBattleNotification(text) {
-    const existing = document.querySelector('.battle-notification');
-    if (existing) {
-        existing.remove();
+// Начало игры
+function startGame() {
+    if (state.balance < state.selectedStake) {
+        tg.showAlert('Недостаточно средств!');
+        document.getElementById('stakeModal').classList.add('hidden');
+        return;
     }
     
-    const notification = document.createElement('div');
-    notification.className = 'battle-notification';
-    notification.textContent = text;
-    document.body.appendChild(notification);
+    document.getElementById('menu').classList.add('hidden');
+    document.getElementById('stakeModal').classList.add('hidden');
+    document.getElementById('gameScreen').classList.add('active');
     
-    if (battleNotificationTimeout) {
-        clearTimeout(battleNotificationTimeout);
-    }
-    battleNotificationTimeout = setTimeout(() => {
-        notification.remove();
-    }, 2000);
-}
-
-let lastMoveTime = 0;
-canvas.addEventListener('click', (e) => {
-    if (!player) return;
+    // Подключение к WebSocket
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${protocol}//${window.location.host}`;
+    state.ws = new WebSocket(wsUrl);
     
-    const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    
-    player.position = { x, y };
-    
-    const now = Date.now();
-    if (now - lastMoveTime > 100) {
-        if (ws && ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify({
-                type: 'move',
-                position: player.position
-            }));
+    // Таймаут подключения
+    const connectionTimeout = setTimeout(() => {
+        if (state.ws && state.ws.readyState !== WebSocket.OPEN) {
+            tg.showAlert('Ошибка подключения к серверу');
+            endGame();
         }
-        lastMoveTime = now;
-    }
-});
-
-canvas.addEventListener('touchstart', (e) => {
-    e.preventDefault();
-    if (!player) return;
+    }, 10000);
     
-    const touch = e.touches[0];
-    const rect = canvas.getBoundingClientRect();
-    const x = touch.clientX - rect.left;
-    const y = touch.clientY - rect.top;
-    
-    player.position = { x, y };
-    
-    const now = Date.now();
-    if (now - lastMoveTime > 100) {
-        if (ws && ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify({
-                type: 'move',
-                position: player.position
-            }));
-        }
-        lastMoveTime = now;
-    }
-});
-
-function drawPlayer(p, isCurrentPlayer) {
-    const size = isCurrentPlayer ? 20 : 15;
-    
-    ctx.save();
-    ctx.translate(p.position.x, p.position.y);
-    
-    if (isCurrentPlayer) {
-        ctx.fillStyle = '#ffd700';
-        ctx.beginPath();
-        ctx.arc(0, 0, size, 0, Math.PI * 2);
-        ctx.fill();
-        
-        ctx.strokeStyle = '#fff';
-        ctx.lineWidth = 3;
-        ctx.stroke();
-    } else {
-        ctx.fillStyle = p.inBattle ? '#ff0000' : '#4ecdc4';
-        ctx.beginPath();
-        ctx.arc(0, 0, size, 0, Math.PI * 2);
-        ctx.fill();
-    }
-    
-    ctx.restore();
-    
-    ctx.fillStyle = '#fff';
-    ctx.font = '12px Arial';
-    ctx.textAlign = 'center';
-    ctx.fillText(p.username, p.position.x, p.position.y - size - 5);
-    
-    if (p.allianceId) {
-        ctx.fillStyle = '#ffd700';
-        ctx.font = '10px Arial';
-        ctx.fillText('🤝', p.position.x + size + 5, p.position.y - size);
-    }
-}
-
-function gameDraw() {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    
-    if (player) {
-        drawPlayer(player, true);
-        
-        players.forEach(p => {
-            if (p.id !== player.id) {
-                drawPlayer(p, false);
+    state.ws.onopen = () => {
+        clearTimeout(connectionTimeout);
+        // Отправка данных для подключения
+        state.ws.send(JSON.stringify({
+            type: 'join',
+            playerId: state.playerId,
+            playerData: {
+                name: state.playerName,
+                stake: state.selectedStake,
+                color: state.selectedSkin
             }
-        });
+        }));
+    };
+    
+    state.ws.onmessage = (event) => {
+        const data = JSON.parse(event.data);
         
-        players.forEach(p => {
-            if (p.id !== player.id) {
-                const dx = p.position.x - player.position.x;
-                const dy = p.position.y - player.position.y;
-                const dist = Math.sqrt(dx * dx + dy * dy);
-                
-                if (dist < 50 && !player.inBattle && !p.inBattle) {
-                    ctx.strokeStyle = '#ff0000';
-                    ctx.lineWidth = 2;
-                    ctx.setLineDash([5, 5]);
-                    ctx.beginPath();
-                    ctx.moveTo(player.position.x, player.position.y);
-                    ctx.lineTo(p.position.x, p.position.y);
-                    ctx.stroke();
-                    ctx.setLineDash([]);
-                    
-                    if (dist < 30) {
-                        if (ws && ws.readyState === WebSocket.OPEN) {
-                            ws.send(JSON.stringify({
-                                type: 'attack',
-                                targetId: p.id
-                            }));
-                        }
+        if (data.type === 'joined') {
+            document.getElementById('gamePlayers').textContent = 
+                `Игроков: ${data.playersCount}/${data.minPlayers}`;
+            
+            if (data.canStart) {
+                state.game.start();
+                startExitTimer();
+            } else {
+                // Периодически проверяем статус
+                const checkInterval = setInterval(() => {
+                    if (state.ws && state.ws.readyState === WebSocket.OPEN) {
+                        state.ws.send(JSON.stringify({ type: 'ping' }));
+                    } else {
+                        clearInterval(checkInterval);
                     }
-                }
+                }, 2000);
             }
+        } else if (data.type === 'gameStarted') {
+            if (!state.game.isRunning) {
+                state.game.start();
+                startExitTimer();
+            }
+        } else if (data.type === 'state') {
+            state.game.updateState(data);
+        } else if (data.type === 'error') {
+            alert(data.message);
+            endGame();
+        } else if (data.type === 'pong') {
+            // Поддержание соединения
+        }
+    };
+    
+    state.ws.onerror = (error) => {
+        tg.showAlert('Ошибка подключения к серверу');
+        endGame();
+    };
+    
+    state.ws.onclose = () => {
+        // Соединение закрыто
+        if (state.game && state.game.isRunning) {
+            endGame();
+        }
+    };
+}
+
+// Таймер выхода
+function startExitTimer() {
+    const exitButton = document.getElementById('exitButton');
+    exitButton.disabled = true;
+    state.canExit = false;
+    
+    let timeLeft = 300; // 5 минут
+    
+    const timer = setInterval(() => {
+        timeLeft--;
+        const minutes = Math.floor(timeLeft / 60);
+        const seconds = timeLeft % 60;
+        exitButton.textContent = `Выйти (${minutes}:${seconds.toString().padStart(2, '0')})`;
+        
+        if (timeLeft <= 0) {
+            clearInterval(timer);
+            exitButton.disabled = false;
+            exitButton.textContent = 'Выйти';
+            state.canExit = true;
+        }
+    }, 1000);
+    
+    state.exitTimer = timer;
+}
+
+// Завершение игры
+function endGame() {
+    if (state.exitTimer) {
+        clearInterval(state.exitTimer);
+        state.exitTimer = null;
+    }
+    
+    if (state.ws) {
+        // Получаем финальный баланс перед выходом
+        const myPlayer = state.game?.players?.get(state.playerId);
+        if (myPlayer) {
+            // Расчет выигрыша (можно улучшить логику)
+            const profit = myPlayer.usdt - state.selectedStake;
+            if (profit > 0) {
+                state.balance += profit;
+                tg.showAlert(`Вы выиграли $${profit.toFixed(2)}!`);
+            } else {
+                state.balance -= state.selectedStake;
+            }
+        } else {
+            // Игрок умер - теряет ставку
+            state.balance -= state.selectedStake;
+        }
+        
+        state.ws.send(JSON.stringify({ type: 'leave' }));
+        state.ws.close();
+        state.ws = null;
+    }
+    
+    state.game.stop();
+    state.selectedStake = null;
+    document.getElementById('gameScreen').classList.remove('active');
+    document.getElementById('menu').classList.remove('hidden');
+    document.getElementById('exitButton').disabled = true;
+    document.getElementById('exitButton').textContent = 'Выйти (5 мин)';
+    
+    // Обновление баланса
+    updateUI();
+}
+
+// Класс игры
+class Game {
+    constructor(canvas) {
+        this.canvas = canvas;
+        this.ctx = canvas.getContext('2d');
+        this.players = new Map();
+        this.food = [];
+        this.deadSnakes = [];
+        this.myPlayerId = state.playerId;
+        this.camera = { x: 0, y: 0 };
+        this.angle = 0;
+        this.targetAngle = 0;
+        this.animationId = null;
+        this.isRunning = false;
+        this.scale = 1;
+        
+        this.resize();
+        window.addEventListener('resize', () => this.resize());
+        
+        // Управление
+        this.setupControls();
+    }
+    
+    resize() {
+        this.canvas.width = window.innerWidth;
+        this.canvas.height = window.innerHeight;
+    }
+    
+    setupControls() {
+        // Управление через касания/мышь
+        let isDown = false;
+        let lastUpdate = 0;
+        
+        const updateAngle = (e) => {
+            if (!isDown || !this.isRunning) return;
+            
+            const rect = this.canvas.getBoundingClientRect();
+            const x = e.clientX || (e.touches && e.touches[0].clientX);
+            const y = e.clientY || (e.touches && e.touches[0].clientY);
+            
+            if (!x || !y) return;
+            
+            const centerX = rect.left + rect.width / 2;
+            const centerY = rect.top + rect.height / 2;
+            
+            this.targetAngle = Math.atan2(y - centerY, x - centerX);
+            
+            // Отправка обновлений с ограничением частоты
+            const now = Date.now();
+            if (now - lastUpdate > 50) { // 20 раз в секунду
+                if (state.ws && state.ws.readyState === WebSocket.OPEN) {
+                    state.ws.send(JSON.stringify({
+                        type: 'update',
+                        angle: this.targetAngle
+                    }));
+                }
+                lastUpdate = now;
+            }
+        };
+        
+        this.canvas.addEventListener('mousedown', (e) => {
+            isDown = true;
+            updateAngle(e);
+        });
+        
+        this.canvas.addEventListener('mousemove', updateAngle);
+        
+        this.canvas.addEventListener('mouseup', () => {
+            isDown = false;
+        });
+        
+        this.canvas.addEventListener('mouseleave', () => {
+            isDown = false;
+        });
+        
+        this.canvas.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            isDown = true;
+            updateAngle(e);
+        });
+        
+        this.canvas.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+            updateAngle(e);
+        });
+        
+        this.canvas.addEventListener('touchend', () => {
+            isDown = false;
         });
     }
     
-    requestAnimationFrame(gameDraw);
-}
-
-setInterval(() => {
-    if (ws && ws.readyState === WebSocket.OPEN && player) {
-        ws.send(JSON.stringify({ type: 'ping' }));
+    start() {
+        this.isRunning = true;
+        if (!this.animationId) {
+            this.animationId = requestAnimationFrame(() => this.loop());
+        }
     }
-}, 30000);
-
-connect();
-gameDraw();
+    
+    stop() {
+        this.isRunning = false;
+        if (this.animationId) {
+            cancelAnimationFrame(this.animationId);
+            this.animationId = null;
+        }
+    }
+    
+    updateState(data) {
+        this.players.clear();
+        data.players.forEach(p => {
+            this.players.set(p.id, p);
+        });
+        this.food = data.food;
+        this.deadSnakes = data.deadSnakes;
+        
+        // Обновление камеры
+        const myPlayer = this.players.get(this.myPlayerId);
+        if (myPlayer) {
+            // Плавное следование камеры
+            const dx = myPlayer.snake.x - this.camera.x;
+            const dy = myPlayer.snake.y - this.camera.y;
+            this.camera.x += dx * 0.1;
+            this.camera.y += dy * 0.1;
+            
+            // Масштабирование в зависимости от размера змейки
+            const baseScale = 0.5;
+            const sizeFactor = Math.max(0.3, 1 - (myPlayer.snake.size - 20) / 200);
+            this.scale = baseScale * sizeFactor;
+            
+            // Обновление UI
+            document.getElementById('gameUsdt').textContent = 
+                `USDT: $${myPlayer.usdt.toFixed(2)}`;
+            document.getElementById('gamePlayers').textContent = 
+                `Игроков: ${this.players.size}`;
+        } else {
+            // Игрок умер
+            if (this.isRunning) {
+                this.isRunning = false;
+                setTimeout(() => {
+                    tg.showAlert('Вы погибли!');
+                    endGame();
+                }, 1000);
+            }
+        }
+    }
+    
+    loop() {
+        this.draw();
+        this.animationId = requestAnimationFrame(() => this.loop());
+    }
+    
+    draw() {
+        const ctx = this.ctx;
+        const width = this.canvas.width;
+        const height = this.canvas.height;
+        
+        // Очистка
+        ctx.fillStyle = '#0f0f1e';
+        ctx.fillRect(0, 0, width, height);
+        
+        // Сетка (оптимизированная)
+        ctx.strokeStyle = '#1a1a2e';
+        ctx.lineWidth = 1;
+        const gridSize = 50;
+        const scale = this.scale;
+        const scaledGridSize = gridSize / scale;
+        const offsetX = ((this.camera.x * scale) % scaledGridSize) - (width / 2 % scaledGridSize);
+        const offsetY = ((this.camera.y * scale) % scaledGridSize) - (height / 2 % scaledGridSize);
+        
+        ctx.save();
+        ctx.translate(width / 2, height / 2);
+        ctx.scale(scale, scale);
+        ctx.translate(-this.camera.x, -this.camera.y);
+        
+        const startX = Math.floor((this.camera.x - width / 2 / scale) / scaledGridSize) * scaledGridSize;
+        const endX = Math.ceil((this.camera.x + width / 2 / scale) / scaledGridSize) * scaledGridSize;
+        const startY = Math.floor((this.camera.y - height / 2 / scale) / scaledGridSize) * scaledGridSize;
+        const endY = Math.ceil((this.camera.y + height / 2 / scale) / scaledGridSize) * scaledGridSize;
+        
+        for (let x = startX; x <= endX; x += scaledGridSize) {
+            ctx.beginPath();
+            ctx.moveTo(x, startY);
+            ctx.lineTo(x, endY);
+            ctx.stroke();
+        }
+        
+        for (let y = startY; y <= endY; y += scaledGridSize) {
+            ctx.beginPath();
+            ctx.moveTo(startX, y);
+            ctx.lineTo(endX, y);
+            ctx.stroke();
+        }
+        
+        ctx.restore();
+        
+        // Трансформация для камеры
+        ctx.save();
+        ctx.translate(width / 2, height / 2);
+        ctx.scale(this.scale, this.scale);
+        ctx.translate(-this.camera.x, -this.camera.y);
+        
+        // Рисование еды
+        this.food.forEach(f => {
+            const gradient = ctx.createRadialGradient(f.x, f.y, 0, f.x, f.y, f.size);
+            gradient.addColorStop(0, '#4ECDC4');
+            gradient.addColorStop(1, '#2E8B8B');
+            ctx.fillStyle = gradient;
+            ctx.beginPath();
+            ctx.arc(f.x, f.y, f.size, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Блик на еде
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+            ctx.beginPath();
+            ctx.arc(f.x - f.size * 0.3, f.y - f.size * 0.3, f.size * 0.3, 0, Math.PI * 2);
+            ctx.fill();
+        });
+        
+        // Рисование мертвых змеек
+        this.deadSnakes.forEach(dead => {
+            ctx.globalAlpha = 0.6;
+            dead.body.forEach((segment, i) => {
+                const progress = i / dead.body.length;
+                const size = 8 * (1 - progress * 0.5);
+                ctx.fillStyle = dead.color;
+                ctx.beginPath();
+                ctx.arc(segment.x, segment.y, size, 0, Math.PI * 2);
+                ctx.fill();
+            });
+            ctx.globalAlpha = 1;
+            
+            // USDT над мертвой змейкой с эффектом свечения
+            if (dead.usdt > 0) {
+                ctx.save();
+                ctx.scale(1 / this.scale, 1 / this.scale);
+                const textY = (dead.y - this.camera.y) * this.scale;
+                const textX = (dead.x - this.camera.x) * this.scale;
+                
+                ctx.shadowColor = '#FFD700';
+                ctx.shadowBlur = 10;
+                ctx.fillStyle = '#FFD700';
+                ctx.font = 'bold 14px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText(`$${dead.usdt.toFixed(2)}`, textX, textY - 20);
+                ctx.restore();
+            }
+        });
+        
+        // Рисование змеек
+        this.players.forEach((player, playerId) => {
+            const snake = player.snake;
+            const isMe = playerId === this.myPlayerId;
+            
+            // Тело змейки с градиентом
+            snake.body.forEach((segment, i) => {
+                const progress = i / snake.body.length;
+                const size = snake.size * (1 - progress * 0.4);
+                
+                // Градиент от головы к хвосту
+                const gradient = ctx.createRadialGradient(
+                    segment.x, segment.y, 0,
+                    segment.x, segment.y, size
+                );
+                const r = parseInt(player.color.slice(1, 3), 16);
+                const g = parseInt(player.color.slice(3, 5), 16);
+                const b = parseInt(player.color.slice(5, 7), 16);
+                gradient.addColorStop(0, `rgba(${r}, ${g}, ${b}, 1)`);
+                gradient.addColorStop(1, `rgba(${r}, ${g}, ${b}, ${0.5 + progress * 0.5})`);
+                
+                ctx.fillStyle = gradient;
+                ctx.beginPath();
+                ctx.arc(segment.x, segment.y, size, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Обводка для своей змейки
+                if (isMe) {
+                    ctx.strokeStyle = '#FFFFFF';
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+                }
+            });
+            
+            // Голова с эффектом
+            const headGradient = ctx.createRadialGradient(
+                snake.x, snake.y, 0,
+                snake.x, snake.y, snake.size
+            );
+            headGradient.addColorStop(0, player.color);
+            headGradient.addColorStop(1, player.color + '80');
+            ctx.fillStyle = headGradient;
+            ctx.beginPath();
+            ctx.arc(snake.x, snake.y, snake.size, 0, Math.PI * 2);
+            ctx.fill();
+            
+            if (isMe) {
+                ctx.strokeStyle = '#FFFFFF';
+                ctx.lineWidth = 3;
+                ctx.stroke();
+            }
+            
+            // Глаза на голове
+            const eyeOffset = snake.size * 0.3;
+            ctx.fillStyle = '#FFFFFF';
+            ctx.beginPath();
+            ctx.arc(
+                snake.x + Math.cos(snake.angle) * eyeOffset - Math.sin(snake.angle) * snake.size * 0.2,
+                snake.y + Math.sin(snake.angle) * eyeOffset + Math.cos(snake.angle) * snake.size * 0.2,
+                snake.size * 0.15, 0, Math.PI * 2
+            );
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(
+                snake.x + Math.cos(snake.angle) * eyeOffset + Math.sin(snake.angle) * snake.size * 0.2,
+                snake.y + Math.sin(snake.angle) * eyeOffset - Math.cos(snake.angle) * snake.size * 0.2,
+                snake.size * 0.15, 0, Math.PI * 2
+            );
+            ctx.fill();
+            
+            // Имя и USDT над головой
+            ctx.save();
+            ctx.scale(1 / this.scale, 1 / this.scale);
+            const textY = (snake.y - this.camera.y) * this.scale;
+            const textX = (snake.x - this.camera.x) * this.scale;
+            
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+            ctx.font = 'bold 16px Arial';
+            ctx.textAlign = 'center';
+            const nameMetrics = ctx.measureText(player.name);
+            ctx.fillRect(
+                textX - nameMetrics.width / 2 - 5,
+                textY - snake.size * this.scale - 35,
+                nameMetrics.width + 10,
+                20
+            );
+            
+            ctx.fillStyle = '#FFFFFF';
+            ctx.fillText(player.name, textX, textY - snake.size * this.scale - 20);
+            
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+            ctx.font = '14px Arial';
+            const usdtText = `$${player.usdt.toFixed(2)}`;
+            const usdtMetrics = ctx.measureText(usdtText);
+            ctx.fillRect(
+                textX - usdtMetrics.width / 2 - 5,
+                textY - snake.size * this.scale - 15,
+                usdtMetrics.width + 10,
+                18
+            );
+            
+            ctx.fillStyle = '#FFD700';
+            ctx.fillText(usdtText, textX, textY - snake.size * this.scale - 2);
+            ctx.restore();
+        });
+        
+        ctx.restore();
+    }
+}

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Idle RPG</title>
+    <title>Slither.io MiniApp</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
         * {
@@ -13,350 +13,305 @@
         }
 
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: #fff;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             overflow: hidden;
-            height: 100vh;
-            width: 100vw;
+            background: #1a1a2e;
+            color: white;
         }
 
-        #gameContainer {
-            width: 100%;
+        #app {
+            width: 100vw;
             height: 100vh;
             position: relative;
+        }
+
+        /* Меню */
+        .menu {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
             display: flex;
             flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            z-index: 100;
         }
 
-        #gameCanvas {
-            flex: 1;
-            background: #1a1a2e;
-            cursor: crosshair;
-            touch-action: none;
+        .menu.hidden {
+            display: none;
         }
 
-        #ui {
+        .menu-header {
             position: absolute;
             top: 0;
             left: 0;
             right: 0;
-            bottom: 0;
-            pointer-events: none;
+            padding: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
         }
 
-        .panel {
-            background: rgba(0, 0, 0, 0.8);
-            border-radius: 10px;
-            padding: 15px;
-            margin: 10px;
-            pointer-events: auto;
+        .player-name {
+            font-size: 16px;
+            font-weight: bold;
+            background: rgba(0, 0, 0, 0.3);
+            padding: 8px 16px;
+            border-radius: 20px;
+        }
+
+        .balance {
+            font-size: 18px;
+            font-weight: bold;
+            background: rgba(0, 0, 0, 0.3);
+            padding: 8px 16px;
+            border-radius: 20px;
+        }
+
+        .play-button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 20px 60px;
+            font-size: 24px;
+            font-weight: bold;
+            border-radius: 50px;
+            cursor: pointer;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .play-button:active {
+            transform: scale(0.95);
+        }
+
+        .skins-button {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            font-size: 16px;
+            border-radius: 25px;
+            cursor: pointer;
             backdrop-filter: blur(10px);
         }
 
-        #playerStats {
+        /* Модальное окно выбора ставки */
+        .stake-modal {
             position: absolute;
-            top: 10px;
-            left: 10px;
-            min-width: 200px;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 200;
         }
 
-        #playerStats h3 {
-            margin-bottom: 10px;
-            color: #ffd700;
+        .stake-modal.hidden {
+            display: none;
         }
 
-        .stat {
+        .stake-modal h2 {
+            margin-bottom: 30px;
+            font-size: 24px;
+        }
+
+        .stake-buttons {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            width: 80%;
+            max-width: 300px;
+        }
+
+        .stake-button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 20px;
+            font-size: 20px;
+            font-weight: bold;
+            border-radius: 15px;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+
+        .stake-button:active {
+            transform: scale(0.95);
+        }
+
+        /* Игровой экран */
+        .game-screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: none;
+        }
+
+        .game-screen.active {
+            display: block;
+        }
+
+        #gameCanvas {
+            width: 100%;
+            height: 100%;
+            background: #0f0f1e;
+        }
+
+        .game-ui {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            padding: 15px;
             display: flex;
             justify-content: space-between;
-            margin: 5px 0;
+            align-items: center;
+            z-index: 10;
+            pointer-events: none;
+        }
+
+        .game-info {
+            background: rgba(0, 0, 0, 0.5);
+            padding: 8px 16px;
+            border-radius: 20px;
             font-size: 14px;
-        }
-
-        .stat-label {
-            color: #aaa;
-        }
-
-        .stat-value {
-            color: #fff;
             font-weight: bold;
         }
 
-        .health-bar {
-            width: 100%;
-            height: 20px;
-            background: #333;
-            border-radius: 10px;
-            overflow: hidden;
-            margin: 5px 0;
-        }
-
-        .health-fill {
-            height: 100%;
-            background: linear-gradient(90deg, #ff0000, #ff6b6b);
-            transition: width 0.3s;
-        }
-
-        .exp-bar {
-            width: 100%;
-            height: 10px;
-            background: #333;
-            border-radius: 5px;
-            overflow: hidden;
-            margin: 5px 0;
-        }
-
-        .exp-fill {
-            height: 100%;
-            background: linear-gradient(90deg, #4ecdc4, #44a08d);
-            transition: width 0.3s;
-        }
-
-        #shop {
+        .exit-button {
             position: absolute;
-            top: 10px;
-            right: 10px;
-            min-width: 250px;
-            max-height: 80vh;
-            overflow-y: auto;
-        }
-
-        #shop h3 {
-            margin-bottom: 15px;
-            color: #ffd700;
-        }
-
-        .shop-tabs {
-            display: flex;
-            gap: 5px;
-            margin-bottom: 15px;
-        }
-
-        .tab {
-            flex: 1;
-            padding: 8px;
-            background: #333;
+            bottom: 20px;
+            right: 20px;
+            background: rgba(255, 0, 0, 0.7);
+            color: white;
             border: none;
-            color: #fff;
-            border-radius: 5px;
+            padding: 12px 24px;
+            font-size: 16px;
+            border-radius: 25px;
             cursor: pointer;
-            font-size: 12px;
+            z-index: 10;
+            pointer-events: all;
         }
 
-        .tab.active {
-            background: #667eea;
-        }
-
-        .shop-item {
-            background: #222;
-            padding: 10px;
-            margin: 5px 0;
-            border-radius: 5px;
-            cursor: pointer;
-            transition: background 0.2s;
-        }
-
-        .shop-item:hover {
-            background: #333;
-        }
-
-        .shop-item.disabled {
+        .exit-button:disabled {
             opacity: 0.5;
             cursor: not-allowed;
         }
 
-        .item-name {
-            font-weight: bold;
-            color: #ffd700;
-            margin-bottom: 5px;
-        }
-
-        .item-desc {
-            font-size: 12px;
-            color: #aaa;
-            margin-bottom: 5px;
-        }
-
-        .item-cost {
-            color: #4ecdc4;
-            font-weight: bold;
-        }
-
-        #alliancePanel {
+        /* Модальное окно скинов */
+        .skins-modal {
             position: absolute;
-            bottom: 10px;
-            left: 10px;
-            min-width: 200px;
-        }
-
-        #alliancePanel h3 {
-            margin-bottom: 10px;
-            color: #ffd700;
-        }
-
-        .alliance-member {
-            font-size: 12px;
-            padding: 5px;
-            background: #222;
-            margin: 3px 0;
-            border-radius: 3px;
-        }
-
-        #playersList {
-            position: absolute;
-            bottom: 10px;
-            right: 10px;
-            min-width: 200px;
-            max-height: 200px;
-            overflow-y: auto;
-        }
-
-        #playersList h3 {
-            margin-bottom: 10px;
-            color: #ffd700;
-        }
-
-        .player-item {
-            font-size: 12px;
-            padding: 5px;
-            background: #222;
-            margin: 3px 0;
-            border-radius: 3px;
-            display: flex;
-            justify-content: space-between;
-        }
-
-        .battle-notification {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            background: rgba(255, 0, 0, 0.9);
-            padding: 20px;
-            border-radius: 10px;
-            font-size: 18px;
-            font-weight: bold;
-            z-index: 1000;
-            pointer-events: none;
-            animation: pulse 1s infinite;
-        }
-
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.7; }
-        }
-
-        button {
-            background: #667eea;
-            border: none;
-            color: #fff;
-            padding: 10px 20px;
-            border-radius: 5px;
-            cursor: pointer;
-            font-size: 14px;
-            margin: 5px 0;
-            transition: background 0.2s;
-        }
-
-        button:hover {
-            background: #5568d3;
-        }
-
-        button:disabled {
-            background: #555;
-            cursor: not-allowed;
-        }
-
-        input {
-            background: #333;
-            border: 1px solid #555;
-            color: #fff;
-            padding: 8px;
-            border-radius: 5px;
-            margin: 5px 0;
+            top: 0;
+            left: 0;
             width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.9);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 300;
         }
 
-        ::-webkit-scrollbar {
-            width: 6px;
+        .skins-modal.hidden {
+            display: none;
         }
 
-        ::-webkit-scrollbar-track {
-            background: #222;
+        .skins-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
+            padding: 20px;
+            max-width: 400px;
         }
 
-        ::-webkit-scrollbar-thumb {
-            background: #555;
-            border-radius: 3px;
+        .skin-item {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            border: 3px solid transparent;
+            cursor: pointer;
+            transition: transform 0.2s, border-color 0.2s;
+        }
+
+        .skin-item:hover {
+            transform: scale(1.1);
+        }
+
+        .skin-item.selected {
+            border-color: #4CAF50;
+        }
+
+        .close-button {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            font-size: 16px;
+            border-radius: 20px;
+            cursor: pointer;
         }
     </style>
 </head>
 <body>
-    <div id="gameContainer">
-        <canvas id="gameCanvas"></canvas>
-        <div id="ui">
-            <div id="playerStats" class="panel">
-                <h3>👤 Ваш персонаж</h3>
-                <div class="stat">
-                    <span class="stat-label">Имя:</span>
-                    <span class="stat-value" id="playerName">-</span>
-                </div>
-                <div class="stat">
-                    <span class="stat-label">Уровень:</span>
-                    <span class="stat-value" id="playerLevel">1</span>
-                </div>
-                <div class="health-bar">
-                    <div class="health-fill" id="healthBar" style="width: 100%"></div>
-                </div>
-                <div class="stat">
-                    <span class="stat-label">HP:</span>
-                    <span class="stat-value" id="playerHealth">100/100</span>
-                </div>
-                <div class="exp-bar">
-                    <div class="exp-fill" id="expBar" style="width: 0%"></div>
-                </div>
-                <div class="stat">
-                    <span class="stat-label">Опыт:</span>
-                    <span class="stat-value" id="playerExp">0</span>
-                </div>
-                <div class="stat">
-                    <span class="stat-label">💰 Золото:</span>
-                    <span class="stat-value" id="playerGold">100</span>
-                </div>
-                <div class="stat">
-                    <span class="stat-label">⚔️ Атака:</span>
-                    <span class="stat-value" id="playerAttack">10</span>
-                </div>
-                <div class="stat">
-                    <span class="stat-label">🛡️ Защита:</span>
-                    <span class="stat-value" id="playerDefense">5</span>
-                </div>
+    <div id="app">
+        <!-- Главное меню -->
+        <div class="menu" id="menu">
+            <div class="menu-header">
+                <div class="player-name" id="playerName">Игрок</div>
+                <div class="balance" id="balance">USDT $0</div>
             </div>
+            
+            <button class="play-button" id="playButton">Играть</button>
+            
+            <button class="skins-button" id="skinsButton">🎨 Скины</button>
+        </div>
 
-            <div id="shop" class="panel">
-                <h3>🛒 Магазин</h3>
-                <div class="shop-tabs">
-                    <button class="tab active" data-tab="weapons">Оружие</button>
-                    <button class="tab" data-tab="upgrades">Улучшения</button>
-                    <button class="tab" data-tab="skills">Скиллы</button>
-                </div>
-                <div id="shopContent"></div>
+        <!-- Модальное окно выбора ставки -->
+        <div class="stake-modal hidden" id="stakeModal">
+            <h2>Выберите ставку (USDT)</h2>
+            <div class="stake-buttons">
+                <button class="stake-button" data-stake="1">1 USDT</button>
+                <button class="stake-button" data-stake="4">4 USDT</button>
+                <button class="stake-button" data-stake="7">7 USDT</button>
+                <button class="stake-button" data-stake="10">10 USDT</button>
             </div>
+        </div>
 
-            <div id="alliancePanel" class="panel">
-                <h3>🤝 Альянс</h3>
-                <input type="text" id="allianceName" placeholder="Название альянса" />
-                <button id="joinAllianceBtn">Вступить/Создать</button>
-                <div id="allianceMembers"></div>
-            </div>
+        <!-- Модальное окно скинов -->
+        <div class="skins-modal hidden" id="skinsModal">
+            <h2>Выберите скин</h2>
+            <div class="skins-grid" id="skinsGrid"></div>
+            <button class="close-button" id="closeSkinsButton">Закрыть</button>
+        </div>
 
-            <div id="playersList" class="panel">
-                <h3>👥 Игроки онлайн</h3>
-                <div id="playersListContent"></div>
+        <!-- Игровой экран -->
+        <div class="game-screen" id="gameScreen">
+            <canvas id="gameCanvas"></canvas>
+            <div class="game-ui">
+                <div class="game-info" id="gameUsdt">USDT: 0</div>
+                <div class="game-info" id="gamePlayers">Игроков: 0</div>
             </div>
+            <button class="exit-button" id="exitButton" disabled>Выйти (5 мин)</button>
         </div>
     </div>
 
-    <script src="game.js"></script>
+    <script type="module" src="game.js"></script>
 </body>
 </html>
