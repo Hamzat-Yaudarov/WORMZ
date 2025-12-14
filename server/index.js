@@ -42,7 +42,7 @@ class GameServer {
     this.deadSnakes = [];
     this.id = Date.now() + Math.random();
     this.gameStarted = false;
-    this.minPlayers = 8;
+    this.minPlayers = 2;
     
     // Генерация еды
     this.generateFood(500);
