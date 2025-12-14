@@ -6,7 +6,7 @@ dotenv.config();
 const BOT_TOKEN = process.env.BOT_TOKEN;
 
 if (!BOT_TOKEN) {
-  console.error('Ошибка: BOT_TOKEN не установлен в .env файле');
+  console.error('Ошибка: BOT_TOKEN не установлен в переменных окружения');
   process.exit(1);
 }
 
@@ -86,9 +86,6 @@ bot.onText(/\/setchat/, async (msg) => {
   }
 
   try {
-    // Проверяем, является ли бот администратором
-    const chatMember = await bot.getChatMember(chatId, bot.token.split(':')[0]);
-    
     // Получаем информацию о чате
     const chat = await bot.getChat(chatId);
     const chatTitle = chat.title || chat.username || `Chat ${chatId}`;
@@ -257,4 +254,3 @@ bot.on('error', (error) => {
 
 console.log('🤖 Бот запущен и готов к работе!');
 console.log('Используйте /start для начала работы.');
-
