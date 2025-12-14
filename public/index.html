@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Idle RPG</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #fff;
+            overflow: hidden;
+            height: 100vh;
+            width: 100vw;
+        }
+
+        #gameContainer {
+            width: 100%;
+            height: 100vh;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+        }
+
+        #gameCanvas {
+            flex: 1;
+            background: #1a1a2e;
+            cursor: crosshair;
+            touch-action: none;
+        }
+
+        #ui {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            pointer-events: none;
+        }
+
+        .panel {
+            background: rgba(0, 0, 0, 0.8);
+            border-radius: 10px;
+            padding: 15px;
+            margin: 10px;
+            pointer-events: auto;
+            backdrop-filter: blur(10px);
+        }
+
+        #playerStats {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            min-width: 200px;
+        }
+
+        #playerStats h3 {
+            margin-bottom: 10px;
+            color: #ffd700;
+        }
+
+        .stat {
+            display: flex;
+            justify-content: space-between;
+            margin: 5px 0;
+            font-size: 14px;
+        }
+
+        .stat-label {
+            color: #aaa;
+        }
+
+        .stat-value {
+            color: #fff;
+            font-weight: bold;
+        }
+
+        .health-bar {
+            width: 100%;
+            height: 20px;
+            background: #333;
+            border-radius: 10px;
+            overflow: hidden;
+            margin: 5px 0;
+        }
+
+        .health-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #ff0000, #ff6b6b);
+            transition: width 0.3s;
+        }
+
+        .exp-bar {
+            width: 100%;
+            height: 10px;
+            background: #333;
+            border-radius: 5px;
+            overflow: hidden;
+            margin: 5px 0;
+        }
+
+        .exp-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #4ecdc4, #44a08d);
+            transition: width 0.3s;
+        }
+
+        #shop {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            min-width: 250px;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+
+        #shop h3 {
+            margin-bottom: 15px;
+            color: #ffd700;
+        }
+
+        .shop-tabs {
+            display: flex;
+            gap: 5px;
+            margin-bottom: 15px;
+        }
+
+        .tab {
+            flex: 1;
+            padding: 8px;
+            background: #333;
+            border: none;
+            color: #fff;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+
+        .tab.active {
+            background: #667eea;
+        }
+
+        .shop-item {
+            background: #222;
+            padding: 10px;
+            margin: 5px 0;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .shop-item:hover {
+            background: #333;
+        }
+
+        .shop-item.disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .item-name {
+            font-weight: bold;
+            color: #ffd700;
+            margin-bottom: 5px;
+        }
+
+        .item-desc {
+            font-size: 12px;
+            color: #aaa;
+            margin-bottom: 5px;
+        }
+
+        .item-cost {
+            color: #4ecdc4;
+            font-weight: bold;
+        }
+
+        #alliancePanel {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            min-width: 200px;
+        }
+
+        #alliancePanel h3 {
+            margin-bottom: 10px;
+            color: #ffd700;
+        }
+
+        .alliance-member {
+            font-size: 12px;
+            padding: 5px;
+            background: #222;
+            margin: 3px 0;
+            border-radius: 3px;
+        }
+
+        #playersList {
+            position: absolute;
+            bottom: 10px;
+            right: 10px;
+            min-width: 200px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        #playersList h3 {
+            margin-bottom: 10px;
+            color: #ffd700;
+        }
+
+        .player-item {
+            font-size: 12px;
+            padding: 5px;
+            background: #222;
+            margin: 3px 0;
+            border-radius: 3px;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .battle-notification {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(255, 0, 0, 0.9);
+            padding: 20px;
+            border-radius: 10px;
+            font-size: 18px;
+            font-weight: bold;
+            z-index: 1000;
+            pointer-events: none;
+            animation: pulse 1s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+
+        button {
+            background: #667eea;
+            border: none;
+            color: #fff;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            margin: 5px 0;
+            transition: background 0.2s;
+        }
+
+        button:hover {
+            background: #5568d3;
+        }
+
+        button:disabled {
+            background: #555;
+            cursor: not-allowed;
+        }
+
+        input {
+            background: #333;
+            border: 1px solid #555;
+            color: #fff;
+            padding: 8px;
+            border-radius: 5px;
+            margin: 5px 0;
+            width: 100%;
+        }
+
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #222;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #555;
+            border-radius: 3px;
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <canvas id="gameCanvas"></canvas>
+        <div id="ui">
+            <div id="playerStats" class="panel">
+                <h3>👤 Ваш персонаж</h3>
+                <div class="stat">
+                    <span class="stat-label">Имя:</span>
+                    <span class="stat-value" id="playerName">-</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-label">Уровень:</span>
+                    <span class="stat-value" id="playerLevel">1</span>
+                </div>
+                <div class="health-bar">
+                    <div class="health-fill" id="healthBar" style="width: 100%"></div>
+                </div>
+                <div class="stat">
+                    <span class="stat-label">HP:</span>
+                    <span class="stat-value" id="playerHealth">100/100</span>
+                </div>
+                <div class="exp-bar">
+                    <div class="exp-fill" id="expBar" style="width: 0%"></div>
+                </div>
+                <div class="stat">
+                    <span class="stat-label">Опыт:</span>
+                    <span class="stat-value" id="playerExp">0</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-label">💰 Золото:</span>
+                    <span class="stat-value" id="playerGold">100</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-label">⚔️ Атака:</span>
+                    <span class="stat-value" id="playerAttack">10</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-label">🛡️ Защита:</span>
+                    <span class="stat-value" id="playerDefense">5</span>
+                </div>
+            </div>
+
+            <div id="shop" class="panel">
+                <h3>🛒 Магазин</h3>
+                <div class="shop-tabs">
+                    <button class="tab active" data-tab="weapons">Оружие</button>
+                    <button class="tab" data-tab="upgrades">Улучшения</button>
+                    <button class="tab" data-tab="skills">Скиллы</button>
+                </div>
+                <div id="shopContent"></div>
+            </div>
+
+            <div id="alliancePanel" class="panel">
+                <h3>🤝 Альянс</h3>
+                <input type="text" id="allianceName" placeholder="Название альянса" />
+                <button id="joinAllianceBtn">Вступить/Создать</button>
+                <div id="allianceMembers"></div>
+            </div>
+
+            <div id="playersList" class="panel">
+                <h3>👥 Игроки онлайн</h3>
+                <div id="playersListContent"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="game.js"></script>
+</body>
+</html>
