@@ -1,12 +1,12 @@
 // Telegram WebApp API
-const tg = window.Telegram.WebApp;
-tg.ready();
-tg.expand();
+const tg = window.Telegram?.WebApp || {};
+tg.ready?.();
+tg.expand?.();
 
 // Состояние приложения
 const state = {
-    playerId: tg.initDataUnsafe?.user?.id || Date.now().toString(),
-    playerName: tg.initDataUnsafe?.user?.first_name || 'Игрок',
+    playerId: null,
+    playerName: 'Игрок',
     balance: 100, // Начальный баланс для тестирования: 100 USDT
     selectedStake: null,
     selectedSkin: '#FF6B6B',
@@ -17,43 +17,64 @@ const state = {
 };
 
 // Инициализация
-document.addEventListener('DOMContentLoaded', () => {
-    // Устанавливаем баланс в 100 USDT для тестирования
-    state.balance = 100;
+function initializeApp() {
+    // Получаем данные из Telegram
+    if (tg.initDataUnsafe?.user) {
+        const user = tg.initDataUnsafe.user;
+        state.playerId = user.id?.toString() || Date.now().toString();
+        state.playerName = user.first_name || user.username || 'Игрок';
+        if (user.last_name) {
+            state.playerName += ' ' + user.last_name;
+        }
+    } else {
+        // Если нет данных из Telegram, используем дефолтные значения
+        state.playerId = Date.now().toString();
+        state.playerName = 'Игрок';
+    }
     
+    // Инициализация компонентов
     initMenu();
     initStakeModal();
     initSkinsModal();
     initGame();
     
-    // Обновление имени игрока из Telegram
-    if (tg.initDataUnsafe?.user) {
-        const user = tg.initDataUnsafe.user;
-        state.playerName = user.first_name || user.username || 'Игрок';
-        if (user.last_name) {
-            state.playerName += ' ' + user.last_name;
-        }
-    }
+    // Устанавливаем баланс в 100 USDT для тестирования
+    state.balance = 100;
     
-    // Обновляем UI с правильным балансом
+    // Обновляем UI
     updateUI();
-});
+}
+
+// Ждем загрузки DOM и готовности Telegram WebApp
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initializeApp);
+} else {
+    // DOM уже загружен
+    setTimeout(initializeApp, 100); // Даем время Telegram WebApp загрузиться
+}
 
 // Инициализация меню
 function initMenu() {
-    // Устанавливаем баланс в 100 при инициализации меню
-    state.balance = 100;
+    const playButton = document.getElementById('playButton');
+    const skinsButton = document.getElementById('skinsButton');
     
-    document.getElementById('playButton').addEventListener('click', () => {
-        // Убеждаемся, что баланс 100 перед показом ставок
-        state.balance = 100;
-        updateUI();
-        document.getElementById('stakeModal').classList.remove('hidden');
-    });
+    if (playButton) {
+        playButton.addEventListener('click', () => {
+            const stakeModal = document.getElementById('stakeModal');
+            if (stakeModal) {
+                stakeModal.classList.remove('hidden');
+            }
+        });
+    }
     
-    document.getElementById('skinsButton').addEventListener('click', () => {
-        document.getElementById('skinsModal').classList.remove('hidden');
-    });
+    if (skinsButton) {
+        skinsButton.addEventListener('click', () => {
+            const skinsModal = document.getElementById('skinsModal');
+            if (skinsModal) {
+                skinsModal.classList.remove('hidden');
+            }
+        });
+    }
 }
 
 // Инициализация модального окна ставок
@@ -115,32 +136,29 @@ function initGame() {
 
 // Обновление UI
 function updateUI() {
-    // Для тестирования: всегда устанавливаем баланс в 100 USDT
-    if (state.balance !== 100) {
-        state.balance = 100;
-    }
+    const playerNameEl = document.getElementById('playerName');
+    const balanceEl = document.getElementById('balance');
     
-    document.getElementById('playerName').textContent = state.playerName;
-    document.getElementById('balance').textContent = `USDT $${state.balance}`;
+    if (playerNameEl) {
+        playerNameEl.textContent = state.playerName;
+    }
+    if (balanceEl) {
+        balanceEl.textContent = `USDT $${state.balance}`;
+    }
 }
-
-// Сброс баланса до 100 USDT для тестирования
-function resetBalance() {
-    state.balance = 100;
-    updateUI();
-}
-
-// Автоматический сброс баланса при загрузке страницы (для тестирования)
-window.addEventListener('load', () => {
-    state.balance = 100;
-    updateUI();
-});
 
 // Начало игры
 function startGame() {
     if (state.balance < state.selectedStake) {
-        tg.showAlert('Недостаточно средств!');
-        document.getElementById('stakeModal').classList.add('hidden');
+        if (tg.showAlert) {
+            tg.showAlert('Недостаточно средств!');
+        } else {
+            alert('Недостаточно средств!');
+        }
+        const stakeModal = document.getElementById('stakeModal');
+        if (stakeModal) {
+            stakeModal.classList.add('hidden');
+        }
         return;
     }
     
@@ -160,7 +178,11 @@ function startGame() {
     // Таймаут подключения
     const connectionTimeout = setTimeout(() => {
         if (state.ws && state.ws.readyState !== WebSocket.OPEN) {
-            tg.showAlert('Ошибка подключения к серверу');
+            if (tg.showAlert) {
+                tg.showAlert('Ошибка подключения к серверу');
+            } else {
+                alert('Ошибка подключения к серверу');
+            }
             endGame();
         }
     }, 10000);
@@ -212,7 +234,11 @@ function startGame() {
         } else if (data.type === 'state') {
             state.game.updateState(data);
         } else if (data.type === 'error') {
-            tg.showAlert(data.message);
+            if (tg.showAlert) {
+                tg.showAlert(data.message);
+            } else {
+                alert(data.message);
+            }
             endGame();
         } else if (data.type === 'pong') {
             // Поддержание соединения
@@ -220,7 +246,11 @@ function startGame() {
     };
     
     state.ws.onerror = (error) => {
-        tg.showAlert('Ошибка подключения к серверу');
+        if (tg.showAlert) {
+            tg.showAlert('Ошибка подключения к серверу');
+        } else {
+            alert('Ошибка подключения к серверу');
+        }
         endGame();
     };
     
@@ -272,7 +302,11 @@ function endGame() {
             const profit = myPlayer.usdt - state.selectedStake;
             if (profit > 0) {
                 state.balance += profit;
-                tg.showAlert(`Вы выиграли $${profit.toFixed(2)}!`);
+                if (tg.showAlert) {
+                    tg.showAlert(`Вы выиграли $${profit.toFixed(2)}!`);
+                } else {
+                    alert(`Вы выиграли $${profit.toFixed(2)}!`);
+                }
             } else {
                 // Не заработал, но ставка возвращается (не умер)
                 state.balance += myPlayer.usdt;
@@ -290,14 +324,13 @@ function endGame() {
     
     state.game.stop();
     state.selectedStake = null;
-    
-    // Для тестирования: всегда устанавливаем баланс в 100 USDT при возврате в меню
-    state.balance = 100;
-    
     document.getElementById('gameScreen').classList.remove('active');
     document.getElementById('menu').classList.remove('hidden');
     document.getElementById('exitButton').disabled = true;
     document.getElementById('exitButton').textContent = 'Выйти (5 мин)';
+    
+    // Для тестирования: устанавливаем баланс в 100 USDT при возврате в меню
+    state.balance = 100;
     
     // Обновление баланса
     updateUI();
@@ -512,7 +545,11 @@ class Game {
             if (this.isRunning) {
                 this.isRunning = false;
                 setTimeout(() => {
-                    tg.showAlert('Вы погибли!');
+                    if (tg.showAlert) {
+                        tg.showAlert('Вы погибли!');
+                    } else {
+                        alert('Вы погибли!');
+                    }
                     endGame();
                 }, 1000);
             }
