@@ -18,6 +18,9 @@ const state = {
 
 // Инициализация
 document.addEventListener('DOMContentLoaded', () => {
+    // Устанавливаем баланс в 100 USDT для тестирования
+    state.balance = 100;
+    
     initMenu();
     initStakeModal();
     initSkinsModal();
@@ -32,12 +35,19 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
     
+    // Обновляем UI с правильным балансом
     updateUI();
 });
 
 // Инициализация меню
 function initMenu() {
+    // Устанавливаем баланс в 100 при инициализации меню
+    state.balance = 100;
+    
     document.getElementById('playButton').addEventListener('click', () => {
+        // Убеждаемся, что баланс 100 перед показом ставок
+        state.balance = 100;
+        updateUI();
         document.getElementById('stakeModal').classList.remove('hidden');
     });
     
@@ -105,6 +115,11 @@ function initGame() {
 
 // Обновление UI
 function updateUI() {
+    // Для тестирования: всегда устанавливаем баланс в 100 USDT
+    if (state.balance !== 100) {
+        state.balance = 100;
+    }
+    
     document.getElementById('playerName').textContent = state.playerName;
     document.getElementById('balance').textContent = `USDT $${state.balance}`;
 }
@@ -117,7 +132,8 @@ function resetBalance() {
 
 // Автоматический сброс баланса при загрузке страницы (для тестирования)
 window.addEventListener('load', () => {
-    resetBalance();
+    state.balance = 100;
+    updateUI();
 });
 
 // Начало игры
@@ -274,6 +290,10 @@ function endGame() {
     
     state.game.stop();
     state.selectedStake = null;
+    
+    // Для тестирования: всегда устанавливаем баланс в 100 USDT при возврате в меню
+    state.balance = 100;
+    
     document.getElementById('gameScreen').classList.remove('active');
     document.getElementById('menu').classList.remove('hidden');
     document.getElementById('exitButton').disabled = true;
