@@ -201,7 +201,7 @@ class GameServer {
 
         if (dist < snake.size / 2 + food.size) {
           snake.size += 0.3;
-          player.usdt += 0.01; // Небольшой бонус за еду
+          // USDT НЕ дается за еду, только размер увеличивается
           this.food.splice(i, 1);
           // Добавляем новую еду
           this.food.push({
@@ -383,16 +383,10 @@ wss.on('connection', (ws, req) => {
           connections.set(ws, { playerId, server });
           
           // Проверяем, можно ли начать игру
+          let gameJustStarted = false;
           if (server.players.size >= server.minPlayers && !server.gameStarted) {
             server.gameStarted = true;
-            // Уведомляем всех игроков на сервере
-            for (const [otherWs, otherConn] of connections) {
-              if (otherConn.server === server && otherWs.readyState === 1) {
-                otherWs.send(JSON.stringify({
-                  type: 'gameStarted'
-                }));
-              }
-            }
+            gameJustStarted = true;
           }
           
           ws.send(JSON.stringify({
@@ -402,6 +396,18 @@ wss.on('connection', (ws, req) => {
             playersCount: server.players.size,
             minPlayers: server.minPlayers
           }));
+          
+          // Если игра только что началась, уведомляем ВСЕХ игроков на сервере
+          if (gameJustStarted) {
+            for (const [otherWs, otherConn] of connections) {
+              if (otherConn.server === server && otherWs.readyState === 1) {
+                otherWs.send(JSON.stringify({
+                  type: 'gameStarted',
+                  playersCount: server.players.size
+                }));
+              }
+            }
+          }
         } else {
           ws.send(JSON.stringify({ type: 'error', message: 'Server full' }));
         }
@@ -445,15 +451,15 @@ wss.on('connection', (ws, req) => {
   });
 });
 
-// Игровой цикл (60 FPS)
+// Игровой цикл (30 FPS для оптимизации)
 setInterval(() => {
   for (const servers of gameServers.values()) {
     for (const server of servers) {
-      if (server.players.size > 0) {
+      if (server.players.size > 0 && server.gameStarted) {
         server.update();
         server.maintainFood();
         
-        // Отправка состояния всем игрокам на сервере
+        // Отправка состояния всем игрокам на сервере (только если игра началась)
         const state = server.getState();
         for (const [ws, conn] of connections) {
           if (conn.server === server) {
@@ -469,10 +475,27 @@ setInterval(() => {
             }
           }
         }
+      } else if (server.players.size > 0 && !server.gameStarted) {
+        // Отправляем только количество игроков, если игра еще не началась
+        for (const [ws, conn] of connections) {
+          if (conn.server === server) {
+            try {
+              if (ws.readyState === 1) {
+                ws.send(JSON.stringify({
+                  type: 'waiting',
+                  playersCount: server.players.size,
+                  minPlayers: server.minPlayers
+                }));
+              }
+            } catch (error) {
+              // Соединение закрыто
+            }
+          }
+        }
       }
     }
   }
-}, 1000 / 60);
+}, 1000 / 30); // 30 FPS вместо 60 для оптимизации
 
 // API endpoints
 app.get('/api/player/:userId', (req, res) => {

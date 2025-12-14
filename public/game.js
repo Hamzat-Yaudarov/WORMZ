@@ -169,14 +169,19 @@ function startGame() {
                 }, 2000);
             }
         } else if (data.type === 'gameStarted') {
+            document.getElementById('gamePlayers').textContent = 
+                `Игроков: ${data.playersCount || state.game.players.size}`;
             if (!state.game.isRunning) {
                 state.game.start();
                 startExitTimer();
             }
+        } else if (data.type === 'waiting') {
+            document.getElementById('gamePlayers').textContent = 
+                `Игроков: ${data.playersCount}/${data.minPlayers}`;
         } else if (data.type === 'state') {
             state.game.updateState(data);
         } else if (data.type === 'error') {
-            alert(data.message);
+            tg.showAlert(data.message);
             endGame();
         } else if (data.type === 'pong') {
             // Поддержание соединения
@@ -407,8 +412,10 @@ class Game {
     }
     
     loop() {
-        this.draw();
-        this.animationId = requestAnimationFrame(() => this.loop());
+        if (this.isRunning) {
+            this.draw();
+            this.animationId = requestAnimationFrame(() => this.loop());
+        }
     }
     
     draw() {
@@ -461,35 +468,54 @@ class Game {
         ctx.scale(this.scale, this.scale);
         ctx.translate(-this.camera.x, -this.camera.y);
         
-        // Рисование еды
-        this.food.forEach(f => {
-            const gradient = ctx.createRadialGradient(f.x, f.y, 0, f.x, f.y, f.size);
-            gradient.addColorStop(0, '#4ECDC4');
-            gradient.addColorStop(1, '#2E8B8B');
-            ctx.fillStyle = gradient;
-            ctx.beginPath();
-            ctx.arc(f.x, f.y, f.size, 0, Math.PI * 2);
-            ctx.fill();
-            
-            // Блик на еде
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
-            ctx.beginPath();
-            ctx.arc(f.x - f.size * 0.3, f.y - f.size * 0.3, f.size * 0.3, 0, Math.PI * 2);
-            ctx.fill();
-        });
-        
-        // Рисование мертвых змеек
-        this.deadSnakes.forEach(dead => {
-            ctx.globalAlpha = 0.6;
-            dead.body.forEach((segment, i) => {
-                const progress = i / dead.body.length;
-                const size = 8 * (1 - progress * 0.5);
-                ctx.fillStyle = dead.color;
-                ctx.beginPath();
-                ctx.arc(segment.x, segment.y, size, 0, Math.PI * 2);
-                ctx.fill();
+        // Рисование еды (оптимизировано - только видимая еда)
+        const myPlayer = this.players.get(this.myPlayerId);
+        if (myPlayer) {
+            const viewRadius = Math.max(this.canvas.width, this.canvas.height) / this.scale;
+            this.food.forEach(f => {
+                const dx = f.x - this.camera.x;
+                const dy = f.y - this.camera.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                
+                // Рисуем только видимую еду
+                if (dist < viewRadius + 50) {
+                    const gradient = ctx.createRadialGradient(f.x, f.y, 0, f.x, f.y, f.size);
+                    gradient.addColorStop(0, '#4ECDC4');
+                    gradient.addColorStop(1, '#2E8B8B');
+                    ctx.fillStyle = gradient;
+                    ctx.beginPath();
+                    ctx.arc(f.x, f.y, f.size, 0, Math.PI * 2);
+                    ctx.fill();
+                    
+                    // Блик на еде
+                    ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+                    ctx.beginPath();
+                    ctx.arc(f.x - f.size * 0.3, f.y - f.size * 0.3, f.size * 0.3, 0, Math.PI * 2);
+                    ctx.fill();
+                }
             });
-            ctx.globalAlpha = 1;
+        }
+        
+        // Рисование мертвых змеек (оптимизировано)
+        const viewRadius = Math.max(this.canvas.width, this.canvas.height) / this.scale;
+        this.deadSnakes.forEach(dead => {
+            const dx = dead.x - this.camera.x;
+            const dy = dead.y - this.camera.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            
+            // Рисуем только видимые мертвые змейки
+            if (dist < viewRadius + 100) {
+                ctx.globalAlpha = 0.6;
+                dead.body.forEach((segment, i) => {
+                    const progress = i / dead.body.length;
+                    const size = 8 * (1 - progress * 0.5);
+                    ctx.fillStyle = dead.color;
+                    ctx.beginPath();
+                    ctx.arc(segment.x, segment.y, size, 0, Math.PI * 2);
+                    ctx.fill();
+                });
+                ctx.globalAlpha = 1;
+            }
             
             // USDT над мертвой змейкой с эффектом свечения
             if (dead.usdt > 0) {
@@ -508,73 +534,122 @@ class Game {
             }
         });
         
-        // Рисование змеек
+        // Рисование змеек (как червяки)
         this.players.forEach((player, playerId) => {
             const snake = player.snake;
             const isMe = playerId === this.myPlayerId;
             
-            // Тело змейки с градиентом
-            snake.body.forEach((segment, i) => {
-                const progress = i / snake.body.length;
-                const size = snake.size * (1 - progress * 0.4);
+            // Рисуем тело змейки как связанные сегменты (червяк)
+            if (snake.body.length > 1) {
+                ctx.save();
+                ctx.strokeStyle = player.color;
+                ctx.fillStyle = player.color;
+                ctx.lineWidth = snake.size * 2;
+                ctx.lineCap = 'round';
+                ctx.lineJoin = 'round';
                 
-                // Градиент от головы к хвосту
-                const gradient = ctx.createRadialGradient(
-                    segment.x, segment.y, 0,
-                    segment.x, segment.y, size
-                );
-                const r = parseInt(player.color.slice(1, 3), 16);
-                const g = parseInt(player.color.slice(3, 5), 16);
-                const b = parseInt(player.color.slice(5, 7), 16);
-                gradient.addColorStop(0, `rgba(${r}, ${g}, ${b}, 1)`);
-                gradient.addColorStop(1, `rgba(${r}, ${g}, ${b}, ${0.5 + progress * 0.5})`);
-                
-                ctx.fillStyle = gradient;
+                // Рисуем тело как линию
                 ctx.beginPath();
-                ctx.arc(segment.x, segment.y, size, 0, Math.PI * 2);
-                ctx.fill();
-                
-                // Обводка для своей змейки
-                if (isMe) {
-                    ctx.strokeStyle = '#FFFFFF';
-                    ctx.lineWidth = 2;
-                    ctx.stroke();
+                ctx.moveTo(snake.body[0].x, snake.body[0].y);
+                for (let i = 1; i < snake.body.length; i++) {
+                    ctx.lineTo(snake.body[i].x, snake.body[i].y);
                 }
-            });
+                ctx.stroke();
+                
+                // Рисуем сегменты тела с уменьшающимся размером
+                for (let i = 0; i < snake.body.length; i++) {
+                    const segment = snake.body[i];
+                    const progress = i / snake.body.length;
+                    const size = snake.size * (1 - progress * 0.5);
+                    
+                    // Градиент для каждого сегмента
+                    const gradient = ctx.createRadialGradient(
+                        segment.x, segment.y, 0,
+                        segment.x, segment.y, size
+                    );
+                    const r = parseInt(player.color.slice(1, 3), 16);
+                    const g = parseInt(player.color.slice(3, 5), 16);
+                    const b = parseInt(player.color.slice(5, 7), 16);
+                    const alpha = 0.7 + progress * 0.3;
+                    gradient.addColorStop(0, `rgba(${r}, ${g}, ${b}, ${alpha})`);
+                    gradient.addColorStop(0.7, `rgba(${r}, ${g}, ${b}, ${alpha * 0.8})`);
+                    gradient.addColorStop(1, `rgba(${r}, ${g}, ${b}, ${alpha * 0.5})`);
+                    
+                    ctx.fillStyle = gradient;
+                    ctx.beginPath();
+                    ctx.arc(segment.x, segment.y, size, 0, Math.PI * 2);
+                    ctx.fill();
+                    
+                    // Обводка для своей змейки
+                    if (isMe && i === 0) {
+                        ctx.strokeStyle = '#FFFFFF';
+                        ctx.lineWidth = 2;
+                        ctx.stroke();
+                    }
+                }
+                ctx.restore();
+            }
             
-            // Голова с эффектом
+            // Голова (больший сегмент)
             const headGradient = ctx.createRadialGradient(
                 snake.x, snake.y, 0,
                 snake.x, snake.y, snake.size
             );
-            headGradient.addColorStop(0, player.color);
-            headGradient.addColorStop(1, player.color + '80');
+            const r = parseInt(player.color.slice(1, 3), 16);
+            const g = parseInt(player.color.slice(3, 5), 16);
+            const b = parseInt(player.color.slice(5, 7), 16);
+            headGradient.addColorStop(0, `rgba(${r}, ${g}, ${b}, 1)`);
+            headGradient.addColorStop(0.6, `rgba(${r}, ${g}, ${b}, 0.9)`);
+            headGradient.addColorStop(1, `rgba(${r}, ${g}, ${b}, 0.7)`);
             ctx.fillStyle = headGradient;
             ctx.beginPath();
             ctx.arc(snake.x, snake.y, snake.size, 0, Math.PI * 2);
             ctx.fill();
             
+            // Обводка головы
             if (isMe) {
                 ctx.strokeStyle = '#FFFFFF';
                 ctx.lineWidth = 3;
                 ctx.stroke();
+            } else {
+                ctx.strokeStyle = player.color;
+                ctx.lineWidth = 2;
+                ctx.stroke();
             }
             
             // Глаза на голове
-            const eyeOffset = snake.size * 0.3;
+            const eyeOffset = snake.size * 0.4;
+            const eyeSize = snake.size * 0.2;
             ctx.fillStyle = '#FFFFFF';
             ctx.beginPath();
             ctx.arc(
-                snake.x + Math.cos(snake.angle) * eyeOffset - Math.sin(snake.angle) * snake.size * 0.2,
-                snake.y + Math.sin(snake.angle) * eyeOffset + Math.cos(snake.angle) * snake.size * 0.2,
-                snake.size * 0.15, 0, Math.PI * 2
+                snake.x + Math.cos(snake.angle) * eyeOffset - Math.sin(snake.angle) * snake.size * 0.25,
+                snake.y + Math.sin(snake.angle) * eyeOffset + Math.cos(snake.angle) * snake.size * 0.25,
+                eyeSize, 0, Math.PI * 2
             );
             ctx.fill();
             ctx.beginPath();
             ctx.arc(
-                snake.x + Math.cos(snake.angle) * eyeOffset + Math.sin(snake.angle) * snake.size * 0.2,
-                snake.y + Math.sin(snake.angle) * eyeOffset - Math.cos(snake.angle) * snake.size * 0.2,
-                snake.size * 0.15, 0, Math.PI * 2
+                snake.x + Math.cos(snake.angle) * eyeOffset + Math.sin(snake.angle) * snake.size * 0.25,
+                snake.y + Math.sin(snake.angle) * eyeOffset - Math.cos(snake.angle) * snake.size * 0.25,
+                eyeSize, 0, Math.PI * 2
+            );
+            ctx.fill();
+            
+            // Зрачки
+            ctx.fillStyle = '#000000';
+            ctx.beginPath();
+            ctx.arc(
+                snake.x + Math.cos(snake.angle) * eyeOffset - Math.sin(snake.angle) * snake.size * 0.25,
+                snake.y + Math.sin(snake.angle) * eyeOffset + Math.cos(snake.angle) * snake.size * 0.25,
+                eyeSize * 0.5, 0, Math.PI * 2
+            );
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(
+                snake.x + Math.cos(snake.angle) * eyeOffset + Math.sin(snake.angle) * snake.size * 0.25,
+                snake.y + Math.sin(snake.angle) * eyeOffset - Math.cos(snake.angle) * snake.size * 0.25,
+                eyeSize * 0.5, 0, Math.PI * 2
             );
             ctx.fill();
             
