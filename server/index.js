@@ -2,12 +2,16 @@ import express from 'express';
 import { Telegraf } from 'telegraf';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { initializeDatabase } from './database.js';
 import { handleStartCommand } from './commands/start.js';
 import { getGameState, saveGameState } from './gameHandler.js';
 
 dotenv.config();
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 const app = express();
 const TOKEN = process.env.BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN;
 const WEBHOOK_URL = process.env.WEBHOOK_URL || 'http://localhost:3000';
@@ -63,6 +67,17 @@ app.post('/api/game/:userId/move', (req, res) => {
 // Health check
 app.get('/health', (req, res) => {
   res.json({ status: 'ok' });
+});
+
+// Сервирование статических файлов React приложения
+const clientBuildPath = path.join(__dirname, '../client/dist');
+app.use(express.static(clientBuildPath));
+
+// SPA routing - отправить index.html для всех не-API маршрутов
+app.get('*', (req, res) => {
+  // API маршруты уже обработаны выше
+  // Для всех остальных маршрутов (включая /game, /rules) отправляем index.html
+  res.sendFile(path.join(clientBuildPath, 'index.html'));
 });
 
 // Запуск сервера
