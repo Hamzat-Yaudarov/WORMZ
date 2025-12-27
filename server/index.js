@@ -9,12 +9,12 @@ import { getGameState, saveGameState } from './gameHandler.js';
 dotenv.config();
 
 const app = express();
-const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+const TOKEN = process.env.BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN;
 const WEBHOOK_URL = process.env.WEBHOOK_URL || 'http://localhost:3000';
-const MINIAPP_URL = process.env.MINIAPP_URL || 'http://localhost:5173';
+const MINIAPP_URL = process.env.WEBAPP_URL || process.env.MINIAPP_URL || 'http://localhost:5173';
 
 if (!TOKEN) {
-  throw new Error('TELEGRAM_BOT_TOKEN не установлен в переменных окружения');
+  throw new Error('BOT_TOKEN не установлен в переменных окружения');
 }
 
 // Инициализация базы данных
@@ -66,11 +66,11 @@ app.get('/health', (req, res) => {
 });
 
 // Запуск сервера
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
   console.log(`🚀 Сервер запущен на порту ${PORT}`);
   console.log(`🤖 Telegram бот активен`);
-  console.log(`🎮 MiniApp URL: ${MINIAPP_URL}`);
+  console.log(`🎮 WebApp URL: ${MINIAPP_URL}`);
 });
 
 // Запуск бота (polling режим для разработки)

@@ -15,9 +15,10 @@
 
 ## 🚀 Требования
 
-- Node.js 16+ 
+- Node.js 16+
 - npm или yarn
 - Telegram Bot Token (получи у [@BotFather](https://t.me/botfather))
+- PostgreSQL база данных (или Neon для облака)
 
 ## 📦 Установка
 
@@ -43,15 +44,19 @@ cp .env.example .env
 
 ```env
 # Telegram Bot Token (получи от @BotFather)
-TELEGRAM_BOT_TOKEN=your_telegram_bot_token_here
+BOT_TOKEN=your_telegram_bot_token_here
+BOT_USERNAME=your_bot_username
 
 # URLs
-WEBHOOK_URL=http://localhost:3000
-MINIAPP_URL=http://localhost:5173
+WEBAPP_URL=https://your-webapp-url.com
+WEBHOOK_URL=https://your-server-url.com
+
+# Database (PostgreSQL/Neon)
+DATABASE_URL=postgresql://user:password@host:5432/dbname
 
 # Server
-PORT=3000
-NODE_ENV=development
+PORT=8080
+NODE_ENV=production
 ```
 
 ## 🎯 Получение Telegram Bot Token
@@ -154,13 +159,19 @@ npm start
 
 ## 💾 База данных
 
-Проект использует SQLite для сохранения статистики игроков:
+Проект использует PostgreSQL (Neon совместимо) для сохранения статистики игроков:
 
-- **users** - информация об игроках
-- **game_stats** - статистика побед/поражений
-- **game_history** - история всех игр
+### Таблицы:
+- **users** - информация об игроках (telegram_id, username)
+- **game_stats** - статистика побед/поражений (wins, losses, total_games, total_points)
+- **game_history** - история всех игр (player_score, opponent_score, result)
 
-БД файл автоматически создаётся в `data/game.db`
+### Настройка Neon PostgreSQL:
+1. Создай аккаунт на [neon.tech](https://neon.tech)
+2. Создай новый проект
+3. Скопируй CONNECTION STRING в `DATABASE_URL`
+
+Приложение автоматически создаст таблицы при первом запуске.
 
 ## 🤖 Игровая AI
 
@@ -213,9 +224,10 @@ bot.command('mycommand', handleMyCommand);
 
 - **Backend:** Node.js, Express, Telegraf
 - **Frontend:** React 18, Vite
-- **Database:** SQLite3
+- **Database:** PostgreSQL (Neon)
 - **Styling:** CSS3
 - **Telegram:** Web App API, Telegram Bot API
+- **Hosting:** Railway, Vercel, или другой cloud provider
 
 ## 📝 Лицензия
 
