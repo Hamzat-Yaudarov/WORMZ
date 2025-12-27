@@ -1,0 +1,97 @@
+.game-stats {
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  padding: 16px 20px;
+  background: var(--card-bg);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.stat-player,
+.stat-opponent {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  min-width: 100px;
+}
+
+.stat-label {
+  font-size: 14px;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.stat-value {
+  font-size: 28px;
+  font-weight: 700;
+  color: white;
+}
+
+.stat-player .stat-value {
+  color: var(--player-color);
+  text-shadow: 0 0 8px rgba(59, 130, 246, 0.3);
+}
+
+.stat-opponent .stat-value {
+  color: var(--opponent-color);
+  text-shadow: 0 0 8px rgba(239, 68, 68, 0.3);
+}
+
+.stat-vs {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background: var(--border-color);
+  color: var(--text-secondary);
+  font-weight: 600;
+  font-size: 14px;
+}
+
+@media (max-height: 600px) {
+  .game-stats {
+    padding: 12px 16px;
+  }
+
+  .stat-player,
+  .stat-opponent {
+    min-width: 70px;
+  }
+
+  .stat-label {
+    font-size: 12px;
+  }
+
+  .stat-value {
+    font-size: 24px;
+  }
+
+  .stat-vs {
+    width: 50px;
+    height: 50px;
+    font-size: 12px;
+  }
+}
+
+@media (max-width: 300px) {
+  .game-stats {
+    gap: 8px;
+  }
+
+  .stat-player,
+  .stat-opponent {
+    min-width: 50px;
+    gap: 4px;
+  }
+
+  .stat-label {
+    font-size: 10px;
+  }
+
+  .stat-value {
+    font-size: 20px;
+  }
+}

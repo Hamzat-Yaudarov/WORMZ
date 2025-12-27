@@ -1,0 +1,114 @@
+.game-grid-container {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  overflow: auto;
+}
+
+.game-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 8px;
+  width: fit-content;
+  aspect-ratio: 1;
+  max-width: calc(100vw - 32px);
+  max-height: calc(100vh - 200px);
+}
+
+.grid-row {
+  display: contents;
+}
+
+.grid-cell {
+  aspect-ratio: 1;
+  border: 2px solid var(--border-color);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  position: relative;
+  font-weight: 600;
+  user-select: none;
+}
+
+.grid-cell:hover {
+  transform: scale(1.05);
+  border-color: var(--primary-color);
+}
+
+.grid-cell:active {
+  transform: scale(0.98);
+}
+
+.cell-owner-player {
+  background: linear-gradient(135deg, var(--player-color), #1d3a8a);
+  color: white;
+  border-color: var(--player-color);
+  box-shadow: 0 0 12px rgba(59, 130, 246, 0.3);
+}
+
+.cell-owner-player:hover {
+  box-shadow: 0 0 16px rgba(59, 130, 246, 0.5);
+}
+
+.cell-owner-opponent {
+  background: linear-gradient(135deg, var(--opponent-color), #7f1d1d);
+  color: white;
+  border-color: var(--opponent-color);
+  box-shadow: 0 0 12px rgba(239, 68, 68, 0.3);
+}
+
+.cell-owner-opponent:hover {
+  box-shadow: 0 0 16px rgba(239, 68, 68, 0.5);
+}
+
+.cell-owner-neutral {
+  background: var(--neutral-color);
+  color: white;
+  border-color: var(--border-color);
+}
+
+.cell-owner-neutral:hover {
+  background: rgba(75, 85, 99, 0.8);
+  transform: scale(1.08);
+  box-shadow: 0 0 12px rgba(255, 255, 255, 0.1);
+}
+
+.cell-strength {
+  font-size: clamp(14px, 5vw, 24px);
+  font-weight: 700;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+@media (max-width: 400px) {
+  .game-grid {
+    gap: 6px;
+  }
+
+  .grid-cell {
+    border-width: 1px;
+  }
+
+  .cell-strength {
+    font-size: 14px;
+  }
+}
+
+@media (max-height: 600px) {
+  .game-grid-container {
+    padding: 8px;
+  }
+
+  .game-grid {
+    gap: 4px;
+    max-height: calc(100vh - 150px);
+  }
+
+  .grid-cell {
+    border-width: 1px;
+  }
+}

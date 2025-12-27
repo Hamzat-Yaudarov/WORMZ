@@ -1,0 +1,33 @@
+{
+  "name": "influence-game-telegram",
+  "version": "1.0.0",
+  "description": "Strategic game Influence with Telegram bot and MiniApp",
+  "main": "server/index.js",
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch server/index.js",
+    "start": "node server/index.js",
+    "client:dev": "cd client && npm run dev",
+    "client:build": "cd client && npm run build"
+  },
+  "keywords": [
+    "telegram",
+    "bot",
+    "miniapp",
+    "game",
+    "influence"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.18.2",
+    "telegraf": "^4.14.0",
+    "sqlite": "^5.0.1",
+    "sqlite3": "^5.1.6",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  }
+}

@@ -1,0 +1,81 @@
+import express from 'express';
+import { Telegraf } from 'telegraf';
+import cors from 'cors';
+import dotenv from 'dotenv';
+import { initializeDatabase } from './database.js';
+import { handleStartCommand } from './commands/start.js';
+import { getGameState, saveGameState } from './gameHandler.js';
+
+dotenv.config();
+
+const app = express();
+const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+const WEBHOOK_URL = process.env.WEBHOOK_URL || 'http://localhost:3000';
+const MINIAPP_URL = process.env.MINIAPP_URL || 'http://localhost:5173';
+
+if (!TOKEN) {
+  throw new Error('TELEGRAM_BOT_TOKEN не установлен в переменных окружения');
+}
+
+// Инициализация базы данных
+await initializeDatabase();
+
+// Создание бота
+const bot = new Telegraf(TOKEN);
+
+// Middleware
+app.use(cors());
+app.use(express.json());
+
+// Telegram команды
+bot.start((ctx) => handleStartCommand(ctx, MINIAPP_URL));
+
+bot.command('game', (ctx) => {
+  ctx.reply('🎮 Нажми на кнопку ниже, чтобы начать игру!', {
+    reply_markup: {
+      inline_keyboard: [
+        [
+          {
+            text: '🎯 Играть в Influence',
+            web_app: { url: `${MINIAPP_URL}/game` }
+          }
+        ]
+      ]
+    }
+  });
+});
+
+// API эндпоинты для игры
+app.get('/api/game/:userId', (req, res) => {
+  const { userId } = req.params;
+  const gameState = getGameState(userId);
+  res.json(gameState);
+});
+
+app.post('/api/game/:userId/move', (req, res) => {
+  const { userId } = req.params;
+  const { action } = req.body;
+  
+  const updatedState = saveGameState(userId, action);
+  res.json(updatedState);
+});
+
+// Health check
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok' });
+});
+
+// Запуск сервера
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`🚀 Сервер запущен на порту ${PORT}`);
+  console.log(`🤖 Telegram бот активен`);
+  console.log(`🎮 MiniApp URL: ${MINIAPP_URL}`);
+});
+
+// Запуск бота (polling режим для разработки)
+bot.launch();
+
+// Graceful shutdown
+process.once('SIGINT', () => bot.stop('SIGINT'));
+process.once('SIGTERM', () => bot.stop('SIGTERM'));
